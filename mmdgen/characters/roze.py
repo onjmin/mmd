@@ -4,6 +4,7 @@ import numpy as np
 
 from ..body import Character, Head, SIDES, finish, joints
 from ..builder import Model
+from ..textures import TextureSet
 from ..geom import catmull, ellipsoid, loft, ring, torus, tube, TAU
 from .. import parts
 
@@ -16,9 +17,9 @@ TEAL = (0.16, 0.66, 0.56)
 GOLD = (0.78, 0.62, 0.32)
 
 
-def build():
+def build(out_dir):
     m = Model("束音ロゼ", "Tabane Roze", "束音ロゼ（非公式・二次創作モデル）", 165)
-    c = Character(m, skin_color=(1.0, 0.86, 0.76), eye_color=(0.12, 0.62, 0.46), bust=1.12,
+    c = Character(m, tex=TextureSet(out_dir), hair_color=HAIR, skin_color=(1.0, 0.86, 0.76), eye_color=(0.12, 0.62, 0.46), bust=1.12,
                   mouth=dict(smile=-1.2))
     m.material("black", "服", BLACK, toon=0)
     m.material("red", "赤", RED, toon=0)

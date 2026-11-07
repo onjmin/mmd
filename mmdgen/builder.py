@@ -18,7 +18,41 @@ class Material:
     edge_size: float
     edge_color: tuple
     toon: int
+    tex: str = None
+    sphere: str = None
+    sphere_mode: int = 0
+    toon_tex: str = None
+    alpha: float = 1.0
+    specular: tuple = (0.0, 0.0, 0.0)
+    power: float = 5.0
     faces: list = field(default_factory=list)
+
+
+@dataclass
+class Rigid:
+    name: str
+    bone: int
+    group: int
+    mask: int
+    shape: int  # 0 球, 1 箱, 2 カプセル
+    size: tuple
+    pos: tuple
+    rot: tuple
+    mass: float
+    damp: tuple
+    mode: int  # 0 ボーン追従, 1 物理演算, 2 物理＋ボーン位置合わせ
+
+
+@dataclass
+class Joint:
+    name: str
+    a: int
+    b: int
+    pos: tuple
+    rot: tuple
+    rot_lo: tuple
+    rot_hi: tuple
+    spring: tuple
 
 
 @dataclass
@@ -51,23 +85,32 @@ class Model:
         self.bones = []
         self.bone = {}
         self.seg = {}  # 自動ウェイト用の骨区間（正規化単位）
-        self.positions, self.normals, self.weights = [], [], []
+        self.positions, self.normals, self.uvs, self.weights = [], [], [], []
         self.morphs = []
         self._morph_acc = {}
         self.frames = []
+        self.textures = []
+        self.rigids, self.joints = [], []
 
     # ---- 材質 ----
-    def material(self, key, name, color, double=False, edge=True, toon=1, edge_size=0.6, shade=0.4):
+    def material(self, key, name, color, double=False, edge=True, toon=1, edge_size=0.6, shade=0.4,
+                 tex=None, sphere=None, sphere_mode=1, toon_tex=None, alpha=1.0, shadow=True):
+        """tex を渡すと色はテクスチャから取り、color は輪郭線の色を決めるのに使う。"""
         if key in self._mat:
             return key
-        flags = pmx.MAT_GROUND_SHADOW | pmx.MAT_SHADOW_MAP | pmx.MAT_SELF_SHADOW
+        flags = (pmx.MAT_GROUND_SHADOW | pmx.MAT_SHADOW_MAP | pmx.MAT_SELF_SHADOW) if shadow else 0
         if double:
             flags |= pmx.MAT_DOUBLE
         if edge:
             flags |= pmx.MAT_EDGE
         c = tuple(float(x) for x in color)
         ec = tuple(max(0.0, x * 0.35) for x in c)
-        mt = Material(name, key, c, tuple(x * shade for x in c), flags, edge_size, ec, toon)
+        diffuse = (1.0, 1.0, 1.0) if tex else c
+        mt = Material(name, key, diffuse, tuple(x * shade for x in diffuse), flags, edge_size, ec, toon,
+                      tex=tex, sphere=sphere, sphere_mode=sphere_mode, toon_tex=toon_tex, alpha=alpha)
+        for t in (tex, sphere, toon_tex):
+            if t and t not in self.textures:
+                self.textures.append(t)
         self._mat[key] = mt
         self.materials.append(mt)
         return key
@@ -137,18 +180,25 @@ class Model:
         return f
 
     # ---- 形状 ----
-    def add(self, mat, mesh, skin, tag=None):
+    def add(self, mat, mesh, skin, uv=None, normals=None):
+        """uv を省くと mesh.uv を使う。normals(頂点) を渡すと法線をそれで置き換える（顔の影を整えるため）。"""
         verts, faces = mesh
+        if uv is None:
+            uv = getattr(mesh, "uv", None)
+        if uv is None:
+            uv = np.zeros((len(verts), 2))
         used = np.unique(faces)
         remap = -np.ones(len(verts), int)
         remap[used] = np.arange(len(used))
         verts = verts[used]
+        uv = np.asarray(uv)[used]
         faces = remap[faces]
         base = len(self.positions)
-        nrm = vertex_normals(verts, faces)
-        for p, n, w in zip(verts, nrm, skin(verts)):
+        nrm = normals(verts) if normals else _merge_seams(verts, vertex_normals(verts, faces))
+        for p, n, t, w in zip(verts, nrm, uv, skin(verts)):
             self.positions.append(p)
             self.normals.append(n)
+            self.uvs.append((float(t[0]), float(t[1])))
             self.weights.append(w)
         self._mat[mat].faces.extend((faces + base).tolist())
         return base, len(verts), used
@@ -175,6 +225,14 @@ class Model:
         out.name, out.name_en, out.comment, out.comment_en = self.name, self.name_en, self.comment, self.comment_en
         out.positions = [tuple(p * s) for p in self.positions]
         out.normals = [tuple(n) for n in self.normals]
+        out.uvs = self.uvs
+        out.textures = self.textures
+        for rb in self.rigids:
+            rb.size = tuple(np.asarray(rb.size) * s)
+            rb.pos = tuple(np.asarray(rb.pos) * s)
+        for j in self.joints:
+            j.pos = tuple(np.asarray(j.pos) * s)
+        out.rigids, out.joints = self.rigids, self.joints
         out.weights = [(self.bone[a], self.bone[b] if b else -1, w) for a, b, w in self.weights]
         out.materials = self.materials
         for b in self.bones:
@@ -191,6 +249,16 @@ class Model:
 
 class _Out:
     pass
+
+
+def _merge_seams(verts, nrm):
+    """UV の継ぎ目で複製した頂点の法線をそろえ、影に筋が出ないようにする。"""
+    key = np.round(verts * 1e5).astype(np.int64)
+    _, inv = np.unique(key, axis=0, return_inverse=True)
+    inv = inv.reshape(-1)
+    acc = np.zeros((inv.max() + 1, 3))
+    np.add.at(acc, inv, nrm)
+    return norm(acc[inv])
 
 
 def mirror(p):

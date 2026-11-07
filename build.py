@@ -11,9 +11,9 @@ TARGETS = {"tabane_roze": roze, "chikune_kiriko": kiriko, "feris": feris}
 def main(names):
     root = os.path.dirname(os.path.abspath(__file__))
     for key in names or TARGETS:
-        model = TARGETS[key].build()
         out = os.path.join(root, "models", key)
         os.makedirs(out, exist_ok=True)
+        model = TARGETS[key].build(out)
         path = os.path.join(out, key + ".pmx")
         model.save(path)
         nf = sum(len(mt.faces) for mt in model.materials)

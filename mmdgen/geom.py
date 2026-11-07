@@ -28,41 +28,58 @@ def ring(c, u, v, ru, rv, n, a0=0.0, a1=TAU, closed=True, rmod=None):
     return (np.asarray(c, float) + np.outer(np.cos(a) * ru * k, u) + np.outer(np.sin(a) * rv * k, v))
 
 
+class MeshData(tuple):
+    """(頂点, 面) のタプル。uv 属性に頂点ごとの UV を持つ。"""
+
+    def __new__(cls, verts, faces, uv=None):
+        obj = super().__new__(cls, (verts, faces))
+        obj.uv = uv
+        return obj
+
+
 def loft(rings, closed=True, cap0=False, cap1=False, centers=None):
-    """リングの列をつないで面にする。面は外向き（中心から離れる向き）に揃える。"""
+    """リングの列をつないで面にする。面は外向き（中心から離れる向き）に揃える。
+    UV は u = リング上の位置、v = リングの並び。閉じたリングは継ぎ目の頂点を複製する。"""
     rings = [np.asarray(r, float) for r in rings]
+    if closed:
+        rings = [np.vstack([r, r[:1]]) for r in rings]
     n = len(rings[0])
+    R = len(rings)
     if centers is None:
         centers = [r.mean(axis=0) for r in rings]
     verts = np.vstack(rings)
+    uv = np.stack(np.meshgrid(np.linspace(0, 1, n), np.linspace(0, 1, R)), -1).reshape(-1, 2)
     faces = []
-    span = n if closed else n - 1
-    for i in range(len(rings) - 1):
+    span = n - 1
+    for i in range(R - 1):
         for j in range(span):
-            a, b = i * n + j, i * n + (j + 1) % n
-            c, d = (i + 1) * n + (j + 1) % n, (i + 1) * n + j
+            a, b = i * n + j, i * n + j + 1
+            c, d = (i + 1) * n + j + 1, (i + 1) * n + j
             faces += [(a, b, c), (a, c, d)]
-    extra = []
+    extra, extra_uv = [], []
     if cap0:
         ci = len(verts) + len(extra)
         extra.append(centers[0])
-        faces += [(ci, (j + 1) % n, j) for j in range(span)]
+        extra_uv.append((0.5, 0.0))
+        faces += [(ci, j + 1, j) for j in range(span)]
     if cap1:
         ci = len(verts) + len(extra)
         extra.append(centers[-1])
-        base = (len(rings) - 1) * n
-        faces += [(ci, base + j, base + (j + 1) % n) for j in range(span)]
+        extra_uv.append((0.5, 1.0))
+        base = (R - 1) * n
+        faces += [(ci, base + j, base + j + 1) for j in range(span)]
     if extra:
         verts = np.vstack([verts, extra])
+        uv = np.vstack([uv, extra_uv])
     faces = np.array(faces, int)
     # 向きの判定：リング中心から外向きなら正
     tri = verts[faces]
     fn = np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
-    ring_idx = np.minimum(faces[:, 0] // n, len(rings) - 1)
+    ring_idx = np.minimum(faces[:, 0] // n, R - 1)
     ctr = np.asarray(centers)[ring_idx]
     if np.sum(np.einsum("ij,ij->i", fn, tri.mean(axis=1) - ctr)) < 0:
         faces = faces[:, ::-1]
-    return verts, faces
+    return MeshData(verts, faces, uv)
 
 
 def ellipsoid(c, r, R=None, nu=24, nv=14, keep=None, shape=None):
@@ -79,11 +96,12 @@ def ellipsoid(c, r, R=None, nu=24, nv=14, keep=None, shape=None):
             loc = shape(loc)
         rings.append(c + loc @ R.T)
         dirs.append(d)
-    verts, faces = loft(rings, centers=[c] * len(rings))
+    mesh = loft(rings, centers=[c] * len(rings))
     if keep is not None:
+        dirs = [np.vstack([d, d[:1]]) for d in dirs]
         ok = keep(np.vstack(dirs))
-        faces = faces[ok[faces].all(axis=1)]
-    return verts, faces
+        mesh = MeshData(mesh[0], mesh[1][ok[mesh[1]].all(axis=1)], mesh.uv)
+    return mesh
 
 
 def frames_along(path, up=None):
@@ -134,8 +152,7 @@ def torus(c, axis, R, r, n=24, m=8):
     v = np.cross(axis, u)
     a = np.arange(n + 1) / n * TAU
     path = np.asarray(c) + np.outer(np.cos(a), u) * R + np.outer(np.sin(a), v) * R
-    verts, faces = tube(path, r, n=m, side=np.broadcast_to(axis, path.shape))
-    return verts, faces
+    return tube(path, r, n=m, side=np.broadcast_to(axis, path.shape))
 
 
 def catmull(points, samples=24):

@@ -4,6 +4,7 @@ import numpy as np
 
 from ..body import Character, SIDES, finish, joints
 from ..builder import Model
+from ..textures import TextureSet
 from ..geom import catmull, ellipsoid, ring, torus, tube, TAU
 from .. import parts
 
@@ -16,9 +17,9 @@ TIP = (0.30, 0.74, 0.72)
 BOW = (0.58, 0.22, 0.16)
 
 
-def build():
+def build(out_dir):
     m = Model("蓄音キリコ", "Chikune Kiriko", "蓄音キリコ（非公式・二次創作モデル）", 158)
-    c = Character(m, skin_color=(0.98, 0.80, 0.56), eye_color=(0.66, 0.24, 0.12), bust=0.95,
+    c = Character(m, tex=TextureSet(out_dir), hair_color=HAIR, skin_color=(0.98, 0.80, 0.56), eye_color=(0.66, 0.24, 0.12), bust=0.95,
                   mouth=dict(rx=0.0085, ry=0.0055, smile=-0.6, open_bottom=1.0))
     m.material("suit", "インナー", SUIT, toon=0)
     m.material("coat", "コート", COAT, double=True, toon=0)

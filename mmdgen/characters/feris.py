@@ -4,6 +4,7 @@ import numpy as np
 
 from ..body import Character, Head, SIDES, finish
 from ..builder import Model
+from ..textures import TextureSet
 from ..geom import catmull, ellipsoid, tube
 from .. import parts
 
@@ -17,9 +18,9 @@ FLAME_IN = (1.0, 0.85, 0.25)
 BOOT = (0.66, 0.32, 0.22)
 
 
-def build():
+def build(out_dir):
     m = Model("フェリス", "Feris", "フェリス（非公式・二次創作モデル）", 150)
-    c = Character(m, skin_color=(1.0, 0.87, 0.79), eye_color=(0.88, 0.48, 0.10), bust=1.18,
+    c = Character(m, tex=TextureSet(out_dir), hair_color=HAIR, skin_color=(1.0, 0.87, 0.79), eye_color=(0.88, 0.48, 0.10), bust=1.18,
                   eye=dict(rx=0.021, ry=0.025, top=0.95),
                   mouth=dict(rx=0.010, ry=0.008, smile=-0.4, open_bottom=1.3))
     m.material("top", "タンクトップ", TOP, toon=0)

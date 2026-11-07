@@ -3,7 +3,7 @@
 import numpy as np
 
 from . import pmx
-from .geom import (UP, catmull, ellipsoid, loft, norm, ring, rot_axes, smoothstep, tube, TAU)
+from .geom import (UP, MeshData, catmull, ellipsoid, loft, norm, ring, rot_axes, smoothstep, tube, TAU)
 
 ARM_ANGLE = np.radians(37)
 SIDES = (("左", "L", 1.0), ("右", "R", -1.0))
@@ -119,12 +119,13 @@ class Head:
 
 
 def _flat_loft(rings, outward, closed=True):
-    verts, faces = loft(rings, closed=closed)
+    mesh = loft(rings, closed=closed)
+    verts, faces = mesh
     tri = verts[faces]
     fn = np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
     if np.sum(fn @ outward) < 0:
         faces = faces[:, ::-1]
-    return verts, faces
+    return MeshData(verts, faces, mesh.uv)
 
 
 def ellipse_ab(cx, cy, rx, ry, top=1.0, bottom=1.0, curve=0.0, K=3, n=28):
@@ -157,8 +158,10 @@ def remap_ab(rings, fn):
 class Character:
     """素体を組み、各キャラのモジュールが服や髪を足していく。"""
 
-    def __init__(self, model, skin_color, eye_color, bust=1.0, eye=None, mouth=None):
+    def __init__(self, model, skin_color, eye_color, bust=1.0, eye=None, mouth=None, tex=None, hair_color=(0.2, 0.2, 0.2)):
         self.m = model
+        self.tex = tex
+        self.hair_color = hair_color
         self.head = Head()
         self.skin_color = skin_color
         self.eye_color = np.array(eye_color, float)
@@ -168,7 +171,7 @@ class Character:
         self.mouth = dict(rx=0.0075, ry=0.0016, smile=-0.8, open_bottom=1.0)
         self.mouth.update(mouth or {})
         m = model
-        m.material("skin", "肌", skin_color, toon=1)
+        m.material("skin", "肌", skin_color, toon_tex=tex.toon("toon_skin.png", (1.0, 0.82, 0.80)))
         self._rig()
 
     # ---- ボーン ----
@@ -243,7 +246,7 @@ class Character:
         """bands: [(境目, 材質)]。torso/leg は y（上から）、arm は腕の付け根からの距離。"""
         m = self.m
         h = self.head
-        m.add("skin", h.mesh(), m.skin_fixed("頭"))
+        m.add("skin", h.mesh(), m.skin_fixed("頭"), normals=lambda v: norm((v - h.c) / h.r))  # 顔の影を球のように滑らかに
         neck = np.array([[0, 0.785, 0.006], [0, 0.83, 0.002], [0, 0.875, 0.0]])
         m.add(neck_mat, tube(neck, [0.022, 0.021, 0.020], n=16), m.skin_auto(["上半身2", "首", "頭"], {"頭": 1.3}))
 
@@ -325,21 +328,21 @@ class Character:
             self.m.add(mat, mesh, skin)
 
     # ---- 顔 ----
-    def build_face(self, closed_mouth_color=(0.45, 0.16, 0.17), blush=True):
+    def build_face(self, closed_mouth_color=(0.45, 0.16, 0.17), blush=True, brow_color=None):
+        """目は白目・瞳・まつ毛の 3 枚の板に、描いたテクスチャを貼る。"""
         m = self.m
         h = self.head
         E = self.eye
-        ec = self.eye_color
-        m.material("eye_white", "白目", (1.0, 1.0, 1.0), edge=False, toon=0)
-        m.material("iris", "瞳", ec, edge=False, toon=0)
-        m.material("iris_dark", "瞳の影", ec * 0.55, edge=False, toon=0)
-        m.material("pupil", "瞳孔", ec * 0.25, edge=False, toon=0)
-        m.material("highlight", "ハイライト", (1.0, 1.0, 1.0), edge=False, toon=0, shade=1.0)
-        m.material("lash", "まつ毛", (0.12, 0.08, 0.08), edge=False, toon=0)
-        m.material("mouth", "口", closed_mouth_color, edge=False, toon=0)
+        T = self.tex
+        noedge = dict(edge=False, toon=0, shadow=False)
+        m.material("eye_white", "白目", (1, 1, 1), tex=T.eye_white(), **noedge)
+        m.material("iris", "瞳", self.eye_color, tex=T.iris("iris.png", self.eye_color), **noedge)
+        m.material("lash", "まつ毛", (0.1, 0.06, 0.07), tex=T.lash(), **noedge)
+        bc = brow_color if brow_color is not None else np.asarray(self.hair_color) * 0.6
+        m.material("brow", "眉", bc, tex=T.brow("brow.png", bc), **noedge)
+        m.material("mouth", "口", closed_mouth_color, **noedge)
         if blush:
-            m.material("blush", "頬", np.array(self.skin_color) * 0.45 + np.array([1.0, 0.55, 0.55]) * 0.55,
-                       edge=False, toon=0)
+            m.material("blush", "頬", (1.0, 0.5, 0.5), tex=T.blush(), **noedge)
         for name, en, panel in [("まばたき", "blink", 2), ("笑い", "smile", 2), ("ウィンク", "wink", 2),
                                 ("ウィンク右", "wink R", 2), ("あ", "a", 3), ("い", "i", 3), ("う", "u", 3),
                                 ("え", "e", 3), ("お", "o", 3)]:
@@ -348,62 +351,48 @@ class Character:
         rx, ry = E["rx"], E["ry"]
         lid = -0.30 * ry
 
-        def closed(r):
-            r[:, 1] = lid + (r[:, 1] - lid) * 0.04
-            return r
-
-        def lash_closed(up):
+        def closer(arch):
+            """まぶたを閉じた形。arch > 0 で ^（笑い）、< 0 で ‿（まばたき）。"""
             def f(r):
-                b0 = r[:, 1].min()
-                r[:, 1] = lid + (-0.35 if not up else 0.35) * (r[:, 1] - b0) - (0 if up else -0.004)
+                a = r[:, 0]
+                w = np.abs(a).max()
+                r[:, 1] = lid + (r[:, 1] - lid) * 0.04 + arch * ry * (1 - (a / w) ** 2)
                 return r
             return f
 
+        def plane(a_half, b_lo, b_hi, s, cx=0.0, cy=0.0, cols=9, rows=7):
+            """接平面上の長方形。u は目尻方向が 1、v は上が 0。"""
+            us = np.linspace(-1, 1, cols)
+            out = []
+            for b in np.linspace(b_hi, b_lo, rows):
+                a = cx + us * a_half * s
+                out.append(np.stack([a, np.full(cols, cy + b)], 1))
+            return out
+
         for jp, en, s in SIDES:
             d0 = Head.dir(s * E["yaw"], E["pitch"])
-            bone = jp + "目"
-            outer = s  # +a が目尻になる向き
+            tilt = E["tilt"]
 
-            def oriented(rings):
-                out = []
-                for r in rings:
-                    r = r.copy()
-                    a, b = r[:, 0].copy(), r[:, 1].copy()
-                    r[:, 1] = b + E["tilt"] * a * outer
-                    out.append(r)
-                return out
+            def tilted(rows):
+                return [np.stack([r[:, 0], r[:, 1] + tilt * r[:, 0] * s], 1) for r in rows]
 
-            parts = [
-                ("eye_white", ellipse_ab(0, 0, rx, ry, top=E["top"]), 0.010, "頭"),
-                ("iris_dark", ellipse_ab(0, -0.001, rx * 0.76, ry * 0.86), 0.016, bone),
-                ("iris", ellipse_ab(0, -0.004, rx * 0.66, ry * 0.66), 0.020, bone),
-                ("pupil", ellipse_ab(0, -0.001, rx * 0.30, ry * 0.36), 0.024, bone),
-                ("highlight", ellipse_ab(outer * rx * 0.28, ry * 0.36, rx * 0.22, rx * 0.22), 0.028, bone),
-                ("highlight", ellipse_ab(-outer * rx * 0.25, -ry * 0.40, rx * 0.11, rx * 0.11), 0.028, bone),
+            layers = [
+                ("eye_white", plane(rx * 1.04, -0.99 * ry, 0.97 * ry * E["top"], s), 0.010, "頭"),
+                ("iris", plane(rx * 0.70, -0.95 * ry, 0.80 * ry, s, cy=-0.02 * ry), 0.016, jp + "目"),
+                ("lash", plane(rx * 1.08, -0.823 * ry, 0.995 * ry * E["top"], s), 0.022, "頭"),
             ]
-            for mat, ab, off, b in parts:
-                ab = [r * np.array([1, 1]) for r in oriented(ab)]
-                base = m.add(mat, h.decal(d0, ab, off), m.skin_fixed(b))
-                blink = h.decal(d0, remap_ab(ab, closed), off)[0]
-                m.add_morph_part("まばたき", base, blink)
-                m.add_morph_part("笑い", base, blink)
-                m.add_morph_part("ウィンク" if s > 0 else "ウィンク右", base, blink)
-
-            t = np.linspace(0.06 * np.pi, 0.97 * np.pi, 18)
-            a = outer * np.cos(t) * rx * 1.10
-            b = np.sin(t) * ry * E["top"] * 1.02 + 0.0008
-            a = np.concatenate([[outer * rx * 1.32], a])
-            b = np.concatenate([[ry * 0.05], b])
-            w = np.concatenate([[0.0006], 0.0011 + 0.0015 * (1 - t / np.pi)])
-            ab = oriented(strip_ab(np.stack([a, b], 1), w))
-            base = m.add("lash", h.decal(d0, ab, 0.032, closed=False), m.skin_fixed("頭"))
-            m.add_morph_part("まばたき", base, h.decal(d0, remap_ab(ab, lash_closed(False)), 0.032, closed=False)[0])
-            m.add_morph_part("笑い", base, h.decal(d0, remap_ab(ab, lash_closed(True)), 0.032, closed=False)[0])
-            m.add_morph_part("ウィンク" if s > 0 else "ウィンク右", base,
-                             h.decal(d0, remap_ab(ab, lash_closed(False)), 0.032, closed=False)[0])
+            for mat, rows, off, bone in layers:
+                rows = tilted(rows)
+                base = m.add(mat, h.decal(d0, rows, off, closed=False), m.skin_fixed(bone))
+                m.add_morph_part("まばたき", base, h.decal(d0, remap_ab(rows, closer(-0.22)), off, closed=False)[0])
+                m.add_morph_part("笑い", base, h.decal(d0, remap_ab(rows, closer(0.30)), off, closed=False)[0])
+                m.add_morph_part("ウィンク" if s > 0 else "ウィンク右", base,
+                                 h.decal(d0, remap_ab(rows, closer(-0.22)), off, closed=False)[0])
+            bd = Head.dir(s * (E["yaw"] + 0.02), E["pitch"] + 0.40)
+            m.add("brow", h.decal(bd, plane(0.026, -0.0065, 0.0065, s), 0.020, closed=False), m.skin_fixed("頭"))
             if blush:
-                bd = Head.dir(s * 0.56, -0.36)
-                m.add("blush", h.decal(bd, ellipse_ab(0, 0, 0.015, 0.006), 0.006), m.skin_fixed("頭"))
+                cd = Head.dir(s * 0.56, -0.36)
+                m.add("blush", h.decal(cd, plane(0.020, -0.010, 0.010, s), 0.006, closed=False), m.skin_fixed("頭"))
 
         # 口
         M = self.mouth
