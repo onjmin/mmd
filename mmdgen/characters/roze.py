@@ -20,7 +20,7 @@ GOLD = (0.78, 0.62, 0.32)
 def build(out_dir):
     m = Model("束音ロゼ", "Tabane Roze", "束音ロゼ（非公式・二次創作モデル）", 165)
     c = Character(m, tex=TextureSet(out_dir), hair_color=HAIR, skin_color=(1.0, 0.86, 0.76), eye_color=(0.12, 0.62, 0.46), bust=1.12,
-                  eye=dict(yaw=0.46, pitch=-0.015, rx=0.0195, ry=0.0152, top=0.78, iris=0.47, iris_in=0.14), mouth=dict(rx=0.0112, ry=0.0009, smile=5.0, pitch=-0.545, nose_pitch=-0.31))
+                  eye=dict(yaw=0.575, h=0.453, rx=0.0235, ry=0.0185, top=0.78, iris=0.39, iris_in=0.14), mouth=dict(rx=0.0118, ry=0.0009, smile=5.0, h=0.145, nose_h=0.28))
     m.material("black", "服", BLACK, toon=0)
     m.material("red", "赤", RED, toon=0)
     m.material("red_d", "腰布", RED, double=True, toon=0)
@@ -202,9 +202,9 @@ def hair(c):
         m.add("white", ellipsoid(orb, [0.0178] * 3, keep=lambda q, sg=sg: q[:, 0] * sg <= 0.05, nu=16, nv=10),
               m.skin_fixed("頭"))
     # ヘッドセット（左耳）とマイク
-    ear = c.head.c + np.array([0.084, -0.010, 0.002])
+    ear = c.head.c + np.array([c.head.r[0] + 0.006, -0.012, 0.004])  # 頭の横幅に沿わせる
     m.add("gray", ellipsoid(ear, [0.007, 0.016, 0.014]), m.skin_fixed("頭"))
-    mic = catmull([ear + np.array([0.002, -0.008, -0.004]), c.head.c + np.array([0.070, -0.050, -0.045]),
+    mic = catmull([ear + np.array([0.002, -0.008, -0.004]), c.head.c + np.array([0.056, -0.046, -0.045]),
                    c.head.c + np.array([0.030, -0.060, -0.078])], 14)
     m.add("gray", tube(mic, 0.0018, n=6), m.skin_fixed("頭"))
     m.add("gray", ellipsoid(mic[-1], [0.005] * 3, nu=10, nv=6), m.skin_fixed("頭"))

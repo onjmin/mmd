@@ -74,23 +74,64 @@ def joints(s):
 
 # ---------------------------------------------------------------- 頭と顔
 
-class Head:
-    def __init__(self, c=(0.0, 0.917, -0.004), r=(0.072, 0.0805, 0.0766)):
-        self.c = np.array(c, float)
-        self.r = np.array(r, float)
+# 頭の形：あご先 0〜頭頂 1 の高さごとの水平断面。標準的な体形の 3D モデル（Neural4D で作った人型）の頭を
+# 輪切りにして測り、頭の高さを 1 として丸めた値。半幅・前（鼻を除いた頬の前面）・後ろ・鼻と唇の出っ張り。
+# 目のくぼみ（高さ 0.30〜0.45）だけは、アニメの顔に合わせて浅くしてある。
+HEAD_H = [0.00, 0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45, 0.50,
+          0.55, 0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90, 0.95, 1.00]
+HEAD_W = [0.07, 0.15, 0.215, 0.265, 0.31, 0.35, 0.378, 0.40, 0.41, 0.412, 0.416,
+          0.42, 0.418, 0.416, 0.41, 0.398, 0.373, 0.344, 0.307, 0.243, 0.15]
+HEAD_F = [0.33, 0.35, 0.375, 0.39, 0.395, 0.39, 0.385, 0.395, 0.405, 0.415, 0.436,
+          0.447, 0.447, 0.44, 0.437, 0.417, 0.414, 0.39, 0.329, 0.26, 0.145]
+HEAD_B = [0.09, 0.16, 0.236, 0.293, 0.347, 0.377, 0.399, 0.426, 0.442, 0.45, 0.455,
+          0.455, 0.451, 0.448, 0.437, 0.425, 0.402, 0.368, 0.322, 0.254, 0.14]
+HEAD_NOSE = [0.01, 0.01, 0.017, 0.024, 0.056, 0.066, 0.046, 0.038, 0.026, 0.02, 0.011,
+             0.005, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
-    def shape(self, loc):
-        loc = np.array(loc, float)
-        y = loc[..., 1]
-        t = np.clip(-y / self.r[1], 0, 1)
-        loc[..., 0] *= 1 - 0.50 * t ** 1.25
-        front = loc[..., 2] < 0
-        loc[..., 2] = np.where(front, loc[..., 2] * (1 - 0.10 * t), loc[..., 2] * (1 - 0.25 * t))
-        loc[..., 1] *= 1 + 0.06 * t
-        return loc
+
+class Head:
+    """頭（肌の面）。高さごとの断面を、前後で半径の違う楕円に鼻の出っ張りを足した形でつなぐ。
+    r は髪の面を置くための大きさの目安（楕円体の半径）として残している。"""
+
+    def __init__(self, chin_y=0.856, height=0.148, z=-0.004, flat=3.4):
+        self.H, self.y0, self.flat = height, chin_y, flat
+        f, b = max(HEAD_F), max(HEAD_B)
+        self.zc = z - (b - f) / 2 * height  # 前後のいちばん出た所の真ん中を z に合わせる
+        self.c = np.array([0.0, chin_y + 0.52 * height, z])
+        self.r = np.array([max(HEAD_W), 0.50, (f + b) / 2]) * height
+
+    def radius(self, h, phi):
+        """高さ h（あご 0〜頭頂 1）、正面から測った角 phi での断面の半径。"""
+        h = np.clip(h, 0, 1)
+        w, f, b, nose = (np.interp(h, HEAD_H, t) * self.H for t in (HEAD_W, HEAD_F, HEAD_B, HEAD_NOSE))
+        sp, cp = np.sin(phi), np.cos(phi)
+        d = np.where(cp > 0, f, b)
+        # 前半分は超楕円で平らにする（アニメの顔は正面が平らで、目を横幅いっぱいに置ける）
+        n = np.where(cp > 0, self.flat, 2.0)
+        rho = (np.abs(sp / w) ** n + np.abs(cp / d) ** n) ** (-1 / n)
+        return rho + nose * np.exp(-((rho * sp) / (0.045 * self.H)) ** 2) * np.clip(cp, 0, 1) ** 2
+
+    def surface(self, h, phi):
+        rho = self.radius(h, phi)
+        return np.stack([rho * np.sin(phi), self.y0 + np.clip(h, 0, 1) * self.H + 0 * phi, self.zc - rho * np.cos(phi)], -1)
+
+    def pitch_at(self, h, yaw=0.0):
+        """あごから h（頭の高さ比）の高さで、正面から yaw の向きにある面の点を指す仰角。"""
+        v = self.surface(h, yaw) - self.c
+        return float(np.arctan2(v[1], np.hypot(v[0], v[2])))
 
     def point(self, d):
-        return self.c + self.shape(np.asarray(d) * self.r)
+        """中心 c から向き d へ伸ばした線が頭の面と交わる点。"""
+        d = norm(np.asarray(d, float))
+        lo, hi = np.zeros(d.shape[:-1]), np.full(d.shape[:-1], 0.2)
+        for _ in range(40):
+            t = (lo + hi) / 2
+            p = self.c + d * t[..., None]
+            h = (p[..., 1] - self.y0) / self.H
+            phi = np.arctan2(p[..., 0], self.zc - p[..., 2])
+            inside = (np.hypot(p[..., 0], p[..., 2] - self.zc) < self.radius(h, phi)) & (h <= 1) & (h >= -0.05)
+            lo, hi = np.where(inside, t, lo), np.where(inside, hi, t)
+        return self.c + d * ((lo + hi) / 2)[..., None]
 
     @staticmethod
     def dir(yaw, pitch):
@@ -102,16 +143,18 @@ class Head:
         return e1, e2
 
     def project(self, d0, ab, off):
-        """接平面上の (a, b) を頭の表面に貼り付ける。off は表面からの浮かせ量（半径比）。"""
+        """接平面上の (a, b) を頭の表面に貼り付ける。off は表面からの浮かせ量（中心からの距離の比）。"""
         e1, e2 = self.basis(d0)
         ab = np.asarray(ab, float)
         q = self.point(d0) + ab[..., :1] * e1 + ab[..., 1:2] * e2
-        d = norm((q - self.c) / self.r)
-        p = self.point(d)
+        p = self.point(q - self.c)
         return self.c + (p - self.c) * (1 + off)
 
-    def mesh(self):
-        return ellipsoid(self.c, self.r, nu=32, nv=20, shape=self.shape)
+    def mesh(self, nh=34, nphi=48):
+        hs = np.linspace(0, 1, nh)
+        phis = np.arange(nphi) / nphi * TAU
+        rings = [self.surface(h, phis) for h in hs]
+        return loft(rings, closed=True, cap0=True, cap1=True)
 
     def decal(self, d0, rings_ab, off, closed=True):
         rings = [self.project(d0, r, off) for r in rings_ab]
@@ -166,10 +209,14 @@ class Character:
         self.skin_color = skin_color
         self.eye_color = np.array(eye_color, float)
         self.bust = bust
-        self.eye = dict(yaw=0.35, pitch=-0.13, rx=0.0205, ry=0.0185, top=0.85, tilt=0.0, iris=0.74, iris_in=0.0)
+        # 目・鼻・口の高さは、あご先からの高さ（頭の肌の高さ比）で決める
+        self.eye = dict(yaw=0.35, h=0.42, rx=0.0205, ry=0.0185, top=0.85, tilt=0.0, iris=0.74, iris_in=0.0)
         self.eye.update(eye or {})
-        self.mouth = dict(rx=0.0075, ry=0.0016, smile=-0.8, open_bottom=1.0, pitch=-0.60, nose_pitch=-0.36)
+        self.eye["pitch"] = self.head.pitch_at(self.eye["h"], self.eye["yaw"])
+        self.mouth = dict(rx=0.0075, ry=0.0016, smile=-0.8, open_bottom=1.0, h=0.14, nose_h=0.27)
         self.mouth.update(mouth or {})
+        self.mouth["pitch"] = self.head.pitch_at(self.mouth["h"])
+        self.mouth["nose_pitch"] = self.head.pitch_at(self.mouth["nose_h"], 0.03)
         m = model
         m.default_toon_tex = tex.toon("toon_cloth.png", (0.80, 0.78, 0.88))
         m.material("skin", "肌", skin_color, toon_tex=tex.toon("toon_skin.png", (1.0, 0.82, 0.80)))

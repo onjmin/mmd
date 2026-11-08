@@ -51,11 +51,16 @@ def measure(path):
     mid = mid[(np.abs(mid[:, 0]) < 0.006) & (mid[:, 1] > 0.40) & (mid[:, 1] < 0.65)]
     crotch = mid[:, 1].min() if len(mid) else np.nan  # スカートやタイツで股が別の材質のときは測らない
     mouth_y, nose_y = mv["口"][:, 1].mean(), mv["鼻"][:, 1].mean()
+    headskin = skin[skin[:, 1] > chin]
+    band = headskin[np.abs(headskin[:, 1] - nose_y) < 0.006]
+    nose_tip = band[np.abs(band[:, 0]) < 0.004, 2].min()
+    cheek = band[(np.abs(band[:, 0]) > 0.012) & (np.abs(band[:, 0]) < 0.020), 2].min()
     height = allv[:, 1].max()
     return {
         "目と目のすき間 / 目の幅": (eyes["L"]["x0"] + eyes["R"]["x0"]) / ew,
         "瞳の中心の間隔 / 目の幅": (eyes["L"]["cx"] - eyes["R"]["cx"]) / ew,
         "瞳の幅 / 目の幅": np.mean([e["iw"] for e in eyes.values()]) / ew,
+        "目の幅 / 頭の高さ": ew / head,
         "目の高さ / 目の幅": np.mean([e["h"] for e in eyes.values()]) / ew,
         # 縦は隣り合う目印の区間ごとに測る（てっぺんからの位置だと短い区間のずれが埋もれる）
         "頭のてっぺん〜目の線 / 頭の高さ": (top - eye_y) / head,
@@ -63,6 +68,9 @@ def measure(path):
         "鼻〜口 / 頭の高さ": (nose_y - mouth_y) / head,
         "口〜あご先 / 頭の高さ": (mouth_y - chin) / head,
         "口の幅 / 目の幅": np.ptp(mv["口"][:, 0]) / ew,
+        # 横顔：頭の奥行きと鼻の高さ（正面だけ見ていると、のっぺりした卵形でも通ってしまう）
+        "横顔の奥行き（鼻先〜後頭部） / 頭の高さ": np.ptp(headskin[:, 2]) / head,
+        "鼻先の出っ張り（鼻の高さの頬の前面から） / 頭の高さ": (cheek - nose_tip) / head,
         "頭のてっぺん〜股 / 頭の高さ": (top - crotch) / head,
         "頭身（身長 / 頭の高さ）": height / head,
     }
