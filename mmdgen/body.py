@@ -166,7 +166,7 @@ class Character:
         self.skin_color = skin_color
         self.eye_color = np.array(eye_color, float)
         self.bust = bust
-        self.eye = dict(yaw=0.35, pitch=-0.13, rx=0.0205, ry=0.0185, top=0.85, tilt=0.0)
+        self.eye = dict(yaw=0.35, pitch=-0.13, rx=0.0205, ry=0.0185, top=0.85, tilt=0.0, iris=0.74)
         self.eye.update(eye or {})
         self.mouth = dict(rx=0.0075, ry=0.0016, smile=-0.8, open_bottom=1.0)
         self.mouth.update(mouth or {})
@@ -390,7 +390,7 @@ class Character:
 
             layers = [
                 ("eye_white", plane(rx * 1.00, -0.99 * ry, 0.90 * ry * E["top"], s), 0.010, "頭"),
-                ("iris", plane(rx * 0.74, -0.90 * ry, 1.00 * ry * E["top"], s), 0.016, jp + "目"),
+                ("iris", plane(rx * E["iris"], -0.90 * ry, 1.00 * ry * E["top"], s), 0.016, jp + "目"),
                 ("lash", plane(rx * 1.08, -0.823 * ry, 0.995 * ry * E["top"], s), 0.022, "頭"),
             ]
             for mat, rows, off, bone in layers:
