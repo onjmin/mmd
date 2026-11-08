@@ -1,6 +1,7 @@
-"""フェリス：赤い短髪、黄色いくちばしの付いた赤い鳥の帽子、背中に広がる炎の羽、黄色いタンクトップとデニムのショートパンツ、茶色いブーツ。
+"""フェリス：橙の短髪、黄色いくちばしととさかの付いた赤い鳥の帽子、胸に「炎」の黄色いタンクトップ、赤いプリーツのミニスカート、背中の橙の鳥の羽。
 
-参考は open2ch「ニキらのかいたフェリス貼ってクレメンス」の色付きの全身絵 3 枚（ref/feris_extra/、gitignore）。
+参考はおんJwiki「フェリス保管庫」の約 200 枚（ref/feris_wiki/、gitignore）。多くの描き手に共通する形を取る。
+open2ch の過去スレの色付き 3 枚（ref/feris_extra/）は同じ描き手の別解釈（赤髪・デニム・炎の羽）なので、帽子の形と比率だけ使う。
 """
 
 import numpy as np
@@ -8,18 +9,19 @@ import numpy as np
 from ..body import Character, Head, SIDES, finish
 from ..builder import Model
 from ..textures import TextureSet
-from ..geom import catmull, ellipsoid, tube
+from ..geom import MeshData, catmull, ellipsoid, tube
 from .. import parts, physics
 
 HAT = (0.78, 0.13, 0.12)
 BEAK = (0.96, 0.84, 0.22)
-HAIR = (0.80, 0.20, 0.15)
-TOP = (0.88, 0.88, 0.48)
-DENIM = (0.30, 0.42, 0.62)
-CUFF = (0.52, 0.64, 0.80)
-FLAME = (0.92, 0.30, 0.07)
-FLAME_IN = (1.0, 0.72, 0.22)
-BOOT = (0.45, 0.30, 0.20)
+HAIR = (0.96, 0.56, 0.20)
+TOP = (0.96, 0.90, 0.42)
+SKIRT = (0.84, 0.14, 0.14)
+EN = (0.90, 0.22, 0.10)
+FLAME = (0.98, 0.52, 0.12)
+FLAME_IN = (1.0, 0.80, 0.32)
+SHOE = (0.80, 0.14, 0.12)
+SOCK = (0.97, 0.96, 0.92)
 
 
 def build(out_dir):
@@ -28,19 +30,23 @@ def build(out_dir):
                   eye=dict(yaw=0.63, h=0.45, rx=0.0230, ry=0.0200, top=0.84, iris=0.46, iris_in=0.12),
                   mouth=dict(rx=0.0140, ry=0.0055, smile=-1.0))
     m.material("top", "タンクトップ", TOP, toon=0)
-    m.material("shorts", "ショートパンツ", DENIM, toon=0)
-    m.material("cuff", "裾の折り返し", CUFF, toon=0)
-    m.material("boot", "ブーツ", BOOT, toon=0)
+    m.material("skirt", "スカート", SKIRT, double=True, toon=0)
+    m.material("shorts", "インナー", SKIRT, toon=0)
+    m.material("en", "胸の炎", EN, edge=False, shadow=False, shade=1.0,
+               tex=c.tex.mark("en.png", "炎", EN, font="C:/Windows/Fonts/YuGothB.ttc"),
+               toon_tex=c.tex.toon("toon_flat.png", (1, 1, 1)))
+    m.material("sock", "靴下", SOCK, toon=0)
+    m.material("shoe", "靴", SHOE, toon=0)
     c.hair_material("hair", "髪", HAIR)
     m.material("hat", "帽子", HAT, double=True, toon=0)
     m.material("beak", "帽子のくちばし", BEAK, toon=0)
     m.material("hat_eye", "帽子の目", (0.08, 0.06, 0.06), toon=0)
     m.material("feather", "白い羽", (0.98, 0.98, 0.96), double=True, toon=0)
-    m.material("flame", "炎の羽", FLAME, double=True, toon=1)
-    m.material("flame_in", "炎の芯", FLAME_IN, double=True, toon=1)
+    m.material("flame", "羽", FLAME, double=True, toon=1)
+    m.material("flame_in", "羽の内側", FLAME_IN, double=True, toon=1)
 
     c.build_body(torso_bands=[(1.0, "skin"), (0.770, "top"), (0.650, "skin"), (0.585, "shorts")],
-                 leg_bands=[(1.0, "shorts"), (0.520, "skin")], arm_bands=[(-1.0, "skin")])
+                 leg_bands=[(1.0, "shorts"), (0.560, "skin"), (0.300, "sock")], arm_bands=[(-1.0, "skin")])
     c.build_face(closed_mouth_color=(0.62, 0.30, 0.32))
 
     torso = c.skin_torso()
@@ -50,10 +56,13 @@ def build(out_dir):
                          [s * 0.042, 0.772, 0.044]], 12)
         m.add("top", tube(strap, 0.0055, 0.003, n=8), torso)
     for jp, en, s in SIDES:
-        # 太ももの付け根で折り返したショートパンツの裾と、すねの半ばまでの茶色いブーツ
-        m.add("cuff", parts.leg_tube(s, 0.532, 0.512, 1.12, steps=3), c.skin_leg(jp))
-        m.add("boot", parts.leg_tube(s, 0.225, 0.030, 1.22, steps=8), c.skin_leg(jp))
-        m.add("boot", parts.foot(s, r=(0.028, 0.028, 0.064), lift=0.002), m.skin_fixed(jp + "足首"))
+        # 白いハイソックスと赤い靴
+        m.add("shoe", parts.leg_tube(s, 0.060, 0.030, 1.20, steps=3), c.skin_leg(jp))
+        m.add("shoe", parts.foot(s, r=(0.028, 0.028, 0.064), lift=0.002), m.skin_fixed(jp + "足首"))
+
+    m.add("skirt", parts.skirt(0.600, 0.480, 1.75, pleats=14, depth=0.10), physics.skirt(c, 0.600, 0.480, 1.75))
+    # 胸の「炎」：胸の前面に沿わせた板
+    m.add("en", chest_mark(np.array(m.positions), 0.716, 0.064, 0.032), torso)
 
     hair(c)
     hat(c)
@@ -83,6 +92,12 @@ def hat(c):
     hr = h.r * np.array([1.08, 0.70, 1.12])  # 髪の外側にかぶせる
 
     m.add("hat", ellipsoid(hc, hr, nu=36, nv=22, keep=lambda d: d[:, 1] > -0.12), m.skin_fixed("頭"))
+    # 頭の上のとさか：後ろへ反る赤い羽 3 本
+    top = hc + np.array([0, hr[1] * 0.97, -0.004])
+    for k, (dx, ln) in enumerate([(0.0, 0.065), (-0.010, 0.050), (0.010, 0.050)]):
+        crest = catmull([top, top + np.array([dx, ln * 0.7, 0.004]), top + np.array([dx * 1.5, ln, 0.020])], 12)
+        c.strand(crest, np.linspace(0.016, 0.003, len(crest)), 0.005, np.tile([1.0, 0, 0], (len(crest), 1)), "hat",
+                 skin=m.skin_fixed("頭"))
     # くちばし：額の上に張り出す平たい丸
     bc = hc + np.array([0, -0.10 * hr[1], -0.93 * hr[2]])
     m.add("beak", ellipsoid(bc, [0.55 * hr[0], 0.30 * hr[1], 0.40 * hr[2]], nu=24, nv=12), m.skin_fixed("頭"))
@@ -98,19 +113,38 @@ def hat(c):
             c.strand(path, w, 0.003, np.tile([0, 1.0, 0], (len(path), 1)), "feather", skin=m.skin_fixed("頭"))
 
 
+def chest_mark(pos, y, w, h, off=0.004):
+    """胸の前面に沿う文字の板。各格子点の奥行きを、その近くの体の頂点の一番前に合わせる。"""
+    xs, ys = np.linspace(-w, w, 7), np.linspace(y + h, y - h, 5)
+    near = pos[(np.abs(pos[:, 0]) < w + 0.02) & (np.abs(pos[:, 1] - y) < h + 0.02) & (pos[:, 2] < 0)]
+    verts, uv = [], []
+    for j, yy in enumerate(ys):
+        for i, xx in enumerate(xs):
+            sel = near[np.hypot(near[:, 0] - xx, near[:, 1] - yy) < 0.008]
+            z = sel[:, 2].min() if len(sel) else near[:, 2].min()
+            verts.append([xx, yy, z - off])
+            uv.append([i / (len(xs) - 1), j / (len(ys) - 1)])
+    faces = []
+    for j in range(len(ys) - 1):
+        for i in range(len(xs) - 1):
+            a = j * len(xs) + i
+            faces += [[a, a + 1, a + len(xs)], [a + 1, a + len(xs) + 1, a + len(xs)]]
+    return MeshData(np.array(verts), np.array(faces), np.array(uv, float))
+
+
 def wings(c):
-    """背中から左右に広がる炎の羽。立ち絵では肩甲骨から頭の高さまで上がり、外へ回って膝の上まで垂れる（左右でハート形）。"""
+    """背中の橙の鳥の羽。肩甲骨から肩の高さへ上がり、外へ回って羽根が垂れる。"""
     m = c.m
     skin = m.skin_fixed("上半身2")
     for sg in (1, -1):
         root = np.array([sg * 0.040, 0.750, 0.062])
         # 羽の上の縁（肩から上へ上がって外へ回る弧）から、炎の羽根が外下へ垂れる
-        arch = catmull([root, [sg * 0.12, 0.86, 0.10], [sg * 0.25, 0.90, 0.11], [sg * 0.36, 0.84, 0.10]], 8)
+        arch = catmull([root, [sg * 0.10, 0.83, 0.09], [sg * 0.19, 0.86, 0.10], [sg * 0.27, 0.81, 0.09]], 8)
         for k in range(8):
             a = arch[min(k, len(arch) - 1)]
             u = k / 7
-            ln = 0.18 + 0.30 * u                       # 外ほど長く垂れる
-            tip = a + np.array([sg * (0.04 + 0.06 * u), -ln, 0.02 + 0.02 * np.sin(k)])
+            ln = 0.10 + 0.20 * u                       # 外ほど長く垂れる
+            tip = a + np.array([sg * (0.03 + 0.04 * u), -ln, 0.02 + 0.01 * np.sin(k)])
             mid = (a + tip) / 2 + np.array([sg * 0.05, 0.02, 0.0])
             path = catmull([root, (root + a) / 2 + np.array([0, 0.02, 0.02]), a, mid, tip], 30)
             t = np.linspace(0, 1, len(path))
@@ -118,8 +152,8 @@ def wings(c):
             tang = np.gradient(path, axis=0)
             sides = np.cross(tang, [0, 0, 1.0])
             sides /= np.linalg.norm(sides, axis=1, keepdims=True) + 1e-9
-            c.strand(path, 0.050 * prof + 0.002, 0.006, sides, "flame", skin=skin)
+            c.strand(path, 0.036 * prof + 0.002, 0.006, sides, "flame", skin=skin)
             inner = path[: int(len(path) * 0.8)] + np.array([0, 0, -0.005])
             t2 = np.linspace(0, 1, len(inner))
-            c.strand(inner, 0.024 * np.sin(np.pi * np.clip(t2 * 0.92 + 0.10, 0, 1)) ** 0.6 + 0.001, 0.004,
+            c.strand(inner, 0.018 * np.sin(np.pi * np.clip(t2 * 0.92 + 0.10, 0, 1)) ** 0.6 + 0.001, 0.004,
                      sides[: len(inner)], "flame_in", skin=skin)
