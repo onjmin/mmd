@@ -158,8 +158,8 @@ def hair(c):
     # 横の姫毛：細い束を重ね、毛先は外へ散らす。奥の緑は胸の下〜へそまで
     for sg in (1, -1):
         for th, y_end, w, mat_low in [(1.10, 0.71, 0.014, "hair"), (1.18, 0.69, 0.012, "hair"),
-                                      (1.26, 0.73, 0.011, "hair"), (1.34, 0.64, 0.014, "teal"),
-                                      (1.48, 0.62, 0.016, "teal")]:
+                                      (1.26, 0.73, 0.011, "hair"), (1.34, 0.58, 0.014, "teal"),
+                                      (1.48, 0.55, 0.016, "teal")]:
             c.drape("hair", sg * (th + rng.uniform(-0.03, 0.03)), y_end + rng.uniform(-0.015, 0.015),
                     w * rng.uniform(0.85, 1.2), thick=0.005, pointy=True, flare=0.10, bones=3, splay=0.45, clearance=(0.082, 0.080, 0.070),
                     mats_fn=lambda p, ml=mat_low: ml if p[1] < 0.79 else "hair")

@@ -51,7 +51,8 @@ import { MMDPhysics } from "three/addons/animation/MMDPhysics.js";
 
 const ammoReady = Ammo().then((A) => { window.Ammo = A; });
 
-// 比較モード: ?m=キー&ref=1（全身）または &ref=face&fb=x0,y0,x1,y1（立ち絵の顔の範囲を 0〜1 で）
+// 比較モード: ?m=キー&ref=1（全身）または &ref=face&fb=x0,y0,x1,y1（立ち絵の顔の範囲を 0〜1 で）。
+// img=ファイル名 で ref/ の別の絵と並べる（既定は キー.png）
 const Q = new URLSearchParams(location.search);
 const compare = Q.get("ref");
 if (compare) document.body.classList.add("compare");
@@ -120,7 +121,8 @@ function load(name) {
 // 立ち絵に合わせて腕を下ろし、同じ大きさで写す
 function setupCompare(name) {
   const el = document.getElementById("ref");
-  el.style.backgroundImage = `url(../ref/${name}.png)`;
+  const src = `../ref/${Q.get("img") || name + ".png"}`;
+  el.style.backgroundImage = `url(${src})`;
   document.getElementById("physics").checked = false;
   const arms = +(Q.get("arms") ?? 0.62);
   bone("左腕").rotation.set(0, 0, -arms);
@@ -137,7 +139,7 @@ function setupCompare(name) {
       el.style.backgroundSize = `${img.width * k}px ${img.height * k}px`;
       el.style.backgroundPosition = `${el.clientWidth / 2 - (x0 + x1) / 2 * img.width * k}px ${el.clientHeight / 2 - (y0 + y1) / 2 * img.height * k}px`;
     };
-    img.src = `../ref/${name}.png`;
+    img.src = src;
     const span = +(Q.get("span") ?? 0.30);  // 写す高さ（身長比）
     const cy = h * +(Q.get("cy") ?? 0.88);
     controls.target.set(0, cy, 0);
