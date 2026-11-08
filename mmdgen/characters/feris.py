@@ -27,8 +27,8 @@ SOCK = (0.97, 0.96, 0.92)
 def build(out_dir):
     m = Model("フェリス", "Feris", "フェリス（非公式・二次創作モデル）", 150)
     c = Character(m, tex=TextureSet(out_dir), hair_color=HAIR, skin_color=(1.0, 0.87, 0.79), eye_color=(0.82, 0.12, 0.12), bust=1.18,
-                  eye=dict(yaw=0.63, h=0.45, rx=0.0230, ry=0.0200, top=0.84, iris=0.46, iris_in=0.12),
-                  mouth=dict(rx=0.0140, ry=0.0055, smile=-1.0))
+                  eye=dict(yaw=0.61, h=0.45, rx=0.0230, ry=0.0170, top=0.82, iris=0.49, iris_in=0.11),
+                  mouth=dict(rx=0.0140, ry=0.0055, smile=-1.0, fang=True))
     m.material("top", "タンクトップ", TOP, toon=0)
     m.material("skirt", "スカート", SKIRT, double=True, toon=0)
     m.material("shorts", "インナー", SKIRT, toon=0)
@@ -58,7 +58,7 @@ def build(out_dir):
         m.add("shoe", parts.leg_tube(s, 0.060, 0.030, 1.20, steps=3), c.skin_leg(jp))
         m.add("shoe", parts.foot(s, r=(0.028, 0.028, 0.064), lift=0.002), m.skin_fixed(jp + "足首"))
 
-    m.add("skirt", parts.skirt(0.600, 0.480, 1.75, pleats=14, depth=0.10), physics.skirt(c, 0.600, 0.480, 1.75))
+    m.add("skirt", parts.skirt(0.600, 0.480, 1.90, pleats=14, depth=0.10), physics.skirt(c, 0.600, 0.480, 1.90))
     # 胸の「炎」：胸の前面に沿わせた板
     m.add("en", chest_mark(np.array(m.positions), 0.716, 0.064, 0.032), torso)
 
@@ -71,10 +71,10 @@ def build(out_dir):
 
 def hair(c):
     c.hair_cap("hair")
-    for th in np.linspace(-0.9, 0.9, 11):
-        # 目の高さまで下りる、毛先のとがった不ぞろいな前髪（目と目の間にも束が下りる）
-        c.bang("hair", th, 0.10 - 0.16 * abs(th) + 0.04 * np.sin(th * 11), 0.022, e_start=1.15, pointy=True,
-               lift_end=1.08, sway=0.30 * th)
+    for th in np.linspace(-0.92, 0.92, 14):
+        # 目の高さまで下りる、毛先のとがった不ぞろいな前髪（目と目の間にも細い束が下りる）
+        c.bang("hair", th, 0.09 - 0.16 * abs(th) + 0.045 * np.sin(th * 13), 0.0175, e_start=1.15, pointy=True,
+               lift_end=1.08, sway=0.28 * th)
     # 短いボブ：横は口の高さ、後ろはうなじで切れ、毛先は外へはねる
     for th in np.linspace(0.95, np.pi, 9):
         for sg in ((1, -1) if th < np.pi - 1e-3 else (1,)):
@@ -87,7 +87,7 @@ def hat(c):
     m = c.m
     h = c.head
     hc = h.c + np.array([0, 0.046, 0.006])
-    hr = h.r * np.array([1.08, 0.70, 1.12])  # 髪の外側にかぶせる
+    hr = h.r * np.array([1.12, 0.72, 1.15])  # 髪の外側にかぶせる
 
     m.add("hat", ellipsoid(hc, hr, nu=36, nv=22, keep=lambda d: d[:, 1] > -0.12), m.skin_fixed("頭"))
     # 頭の上のとさか：後ろへ反る赤い羽 3 本
