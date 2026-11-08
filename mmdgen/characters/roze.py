@@ -146,30 +146,46 @@ def hair(c):
     m = c.m
     c.hair_cap("hair")
     rng = np.random.default_rng(7)  # 束ごとに太さと長さを少しずつ変え、筋がそろって見えないようにする
-    # 姫カットの前髪：隣と重なる幅にして、毛先の高さを少し乱す
-    for th in np.linspace(-0.66, 0.66, 11):
-        c.bang("hair", th + rng.uniform(-0.03, 0.03), 0.15 + rng.uniform(-0.025, 0.025), 0.026 * rng.uniform(0.85, 1.2),
+    # 姫カットの前髪：太さと毛先の高さをばらし、束どうしの間にすき間が見えるようにする
+    for th in np.linspace(-0.66, 0.66, 12):
+        c.bang("hair", th + rng.uniform(-0.025, 0.025), 0.15 + rng.uniform(-0.05, 0.05), 0.021 * rng.uniform(0.8, 1.2),
                thick=0.009, e_start=1.25, pointy=False, lift_end=1.12)
-    # 頬の横に細く垂れる髪（顔の幅を隠さないよう、頬の端に沿わせる）
+    # 頬の横に細く垂れる姫毛（あごの高さまで）
     for sg in (1, -1):
-        for th, e_end, w in [(0.86, -0.62, 0.013), (0.96, -0.70, 0.012)]:
+        for th, e_end, w in [(0.86, -0.66, 0.013), (0.96, -0.74, 0.012)]:
             c.bang("hair", sg * th, e_end + rng.uniform(-0.03, 0.03), w, thick=0.004, e_start=1.25, pointy=True,
                    lift_end=1.03)
-    # 横の姫毛：細い束を重ね、毛先は外へ散らす。奥の緑は胸の下〜へそまで
+    # 結い髪から下がる左右の房：玉の下から外へ張り出し、あごの下で外へはねる。1〜2 本は胸まで、奥の緑は腰まで
+    hc, hr = c.hair_surface()
     for sg in (1, -1):
-        for th, y_end, w, mat_low in [(1.10, 0.71, 0.014, "hair"), (1.18, 0.69, 0.012, "hair"),
-                                      (1.26, 0.73, 0.011, "hair"), (1.34, 0.58, 0.014, "teal"),
-                                      (1.48, 0.55, 0.016, "teal")]:
-            c.drape("hair", sg * (th + rng.uniform(-0.03, 0.03)), y_end + rng.uniform(-0.015, 0.015),
-                    w * rng.uniform(0.85, 1.2), thick=0.005, pointy=True, flare=0.10, bones=3, splay=0.45, clearance=(0.082, 0.080, 0.070),
-                    mats_fn=lambda p, ml=mat_low: ml if p[1] < 0.79 else "hair")
-    # 後ろ髪（肩甲骨くらいまで）：幅と長さをばらし、毛先をとがらせる
-    for th in np.linspace(1.70, np.pi, 8):
+        base = hc + Head.dir(sg * 1.05, 0.80) * hr
+        for k, (y_end, w, mat, back) in enumerate([(0.840, 0.017, "hair", 0.000), (0.828, 0.015, "hair", 0.006),
+                                                    (0.850, 0.014, "hair", 0.012), (0.815, 0.016, "hair", 0.018),
+                                                    (0.735, 0.013, "hair", 0.010), (0.760, 0.012, "hair", 0.020),
+                                                    (0.600, 0.015, "teal", 0.032), (0.575, 0.016, "teal", 0.040)]):
+            j = rng.uniform(-0.006, 0.006, 3)
+            out = 0.066 + j[0] - (0.012 if mat == "teal" else 0.0)
+            pts = [base + [0, 0, back * 0.3],
+                   base + [sg * 0.030, -0.022, 0.006 + back * 0.5],
+                   base + [sg * out * 0.85, -0.062 + j[1], 0.012 + back],
+                   base + [sg * out, -0.108, 0.014 + back]]
+            # 肩より下は肩の外側をまっすぐ下り、毛先だけ小さく波打たせる
+            for y in np.linspace(base[1] - 0.15, y_end, 4 if y_end < 0.80 else 2):
+                wave = 0.005 * np.sin((base[1] - y) * 60 + k)
+                pts.append([sg * (abs(base[0]) + out - 0.004 + wave + j[2]), y, base[2] + 0.012 + back])
+            path = catmull(np.array(pts, float), 30)
+            tg = np.gradient(path, axis=0)
+            sides = np.cross(tg, [0, 0, 1.0])
+            n = len(path)
+            tt = np.linspace(0, 1, n)
+            widths = w * (0.7 + 0.3 * np.minimum(1, tt * 4)) * (1 - 0.9 * np.clip((tt - 0.75) / 0.25, 0, 1))
+            c.strand(path, widths, 0.005, sides, mat, skin=c.hair_chain(path, base[1] - 0.03, 3, w * 0.6))
+    # 後ろ髪（肩甲骨くらいまで）：前からは房の陰に隠れる範囲だけ
+    for th in np.linspace(2.0, np.pi, 7):
         for sg in ((1, -1) if th < np.pi - 1e-3 else (1,)):
-            c.drape("hair", sg * th, 0.72 + rng.uniform(-0.03, 0.03), 0.032 * rng.uniform(0.8, 1.25),
+            c.drape("hair", sg * th, 0.72 + rng.uniform(-0.03, 0.03), 0.034 * rng.uniform(0.8, 1.25),
                     flare=0.04, pointy=True, bones=3)
     # 頭の両側の小さな結い髪と陰陽玉の髪飾り
-    hc, hr = c.hair_surface()
     for sg in (1, -1):
         d = Head.dir(sg * 1.05, 0.80)
         base = hc + d * hr

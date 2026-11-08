@@ -137,7 +137,7 @@ class TextureSet:
     def blush(self, name="blush.png", color=(1.0, 0.45, 0.50)):
         n = 128
         y, x = np.mgrid[0:n, 0:n] / (n - 1) * 2 - 1
-        a = np.clip(1 - (x * x + (y * 1.0) ** 2), 0, 1) ** 1.6 * 0.55
+        a = np.clip(1 - (x * x + (y * 1.0) ** 2), 0, 1) ** 1.6 * 0.30  # 立ち絵の頬は淡い
         lines = (np.abs(((x + y * 0.6) * 3.5) % 1 - 0.5) < 0.07) & (np.abs(x) < 0.55) & (np.abs(y) < 0.35)
         a = np.maximum(a, lines * 0.55)
         arr = np.dstack([np.full((n, n), c) for c in color] + [a])
