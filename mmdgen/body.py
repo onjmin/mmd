@@ -82,6 +82,63 @@ def joints(s):
 
 # ---------------------------------------------------------------- 頭と顔
 
+
+def ear(c, n, up, back, a=0.0090, b=0.0155, K=11, J=44):
+    """アニメ風の耳。輪郭は上が丸く耳たぶが細い C の形。前（顔側）の縁で頭に付く。
+    外の面に凹凸を付ける：外の縁が巻いた耳の縁（耳輪）、その内側の山（対輪）、真ん中のくぼみ（耳甲介）、前の小さな出っ張り（耳珠）。
+    c は耳の中心、n は耳の面の向き（外）、up は上、back は後ろ。a・b は前後・上下の半径。"""
+    th = np.linspace(0, 2 * np.pi, J, endpoint=False)  # 0 が後ろ、π/2 が上、π が前、3π/2 が耳たぶ
+    deg = np.degrees(th)
+    cs, sn = np.cos(th), np.sin(th)
+    ox = np.where(cs < 0, 0.75, 1.0) * cs * (1 - 0.30 * np.clip(-sn, 0, 1)) - 0.15 * np.clip(-sn, 0, 1)
+    oy = sn
+    # 耳輪は後ろ・上・前上を回り、前（顔に付く側）と耳たぶの前では消える
+    rim_on = np.clip(np.minimum((190 - deg) / 40, 1), 0, 1) + np.clip((deg - 250) / 40, 0, 1)
+    rim_on = np.clip(rim_on, 0, 1)
+    anti_on = np.clip(1 - np.abs(((deg + 180) % 360 - 180) - 45) / 75, 0, 1)
+
+    def relief(t, j):
+        x, y = t * ox[j], t * oy[j]
+        hgt = 0.0012 + 0.0034 * np.exp(-((t - 0.84) / 0.11) ** 2) * rim_on[j]
+        hgt += 0.0016 * np.exp(-((t - 0.56) / 0.10) ** 2) * anti_on[j]
+        hgt -= 0.0030 * np.exp(-((x + 0.12) / 0.45) ** 2 - ((y + 0.05) / 0.45) ** 2)
+        hgt += 0.0020 * np.exp(-((x + 0.78) / 0.18) ** 2 - ((y + 0.22) / 0.22) ** 2)
+        hgt -= 0.0010 * max(0.0, t - 0.93) / 0.07  # 縁は丸めて裏へ回す
+        return x * a, y * b, hgt
+
+    front, behind = [], []
+    for k in range(K + 1):
+        t = k / K
+        for j in range(J):
+            x, y, hg = relief(t, j)
+            base = c + back * x + up * y
+            front.append(base + n * hg)
+            behind.append(base - n * (0.0020 + 0.0004 * t))
+    V = np.array(front + behind)
+    off = len(front)
+    idx = lambda k, j: k * J + (j % J)
+    faces = []
+    for k in range(K):
+        for j in range(J):
+            a0, a1, b0, b1 = idx(k, j), idx(k, j + 1), idx(k + 1, j), idx(k + 1, j + 1)
+            faces += [[a0, b0, a1], [a1, b0, b1], [a0 + off, a1 + off, b0 + off], [a1 + off, b1 + off, b0 + off]]
+    for j in range(J):  # 外周の側面
+        a0, a1 = idx(K, j), idx(K, j + 1)
+        faces += [[a0, a1, a0 + off], [a1, a1 + off, a0 + off]]
+    faces = np.array(faces)
+    # 向きをそろえる：表は n 側、裏は -n 側、側面は外周の外向き
+    tri = V[faces]
+    fn = np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
+    cen = tri.mean(1) - c
+    side = np.arange(len(faces)) >= 4 * K * J
+    want = np.where(side, np.einsum("ij,ij->i", fn, cen), np.where(np.arange(len(faces)) % 4 < 2, fn @ n, -(fn @ n)))
+    flip = want < 0
+    faces[flip] = faces[flip][:, ::-1]
+    # 耳輪の内側（くぼみ）は影の色にして、立体が読めるようにする。境目は格子の輪に沿わせてなめらかにする
+    ring_k = np.arange(len(faces)) // (4 * J)
+    inner = (np.arange(len(faces)) < 4 * K * J) & (np.arange(len(faces)) % 4 < 2) & (ring_k < round(K * 0.64))
+    return MeshData(V, faces[~inner]), MeshData(V, faces[inner])
+
 # 頭の形：あご先 0〜頭頂 1 の高さごとの水平断面。標準的な体形の 3D モデル（Neural4D で作った人型）の頭を
 # 輪切りにして測り、頭の高さを 1 として丸めた値。半幅・前（鼻を除いた頬の前面）・後ろ・鼻と唇の出っ張り。
 # 目のくぼみ（高さ 0.30〜0.45）だけは、アニメの顔に合わせて浅くしてある。
@@ -229,6 +286,8 @@ class Character:
         m = model
         m.default_toon_tex = tex.toon("toon_cloth.png", (0.80, 0.78, 0.88))
         m.material("skin", "肌", skin_color, toon_tex=tex.toon("toon_skin.png", (1.0, 0.82, 0.80)))
+        m.material("ear_in", "耳の内側", np.asarray(skin_color) * np.array([0.92, 0.78, 0.76]),
+                   toon_tex=tex.toon("toon_skin.png", (1.0, 0.82, 0.80)), edge=False)
         self._rig()
         self._chains = 0
         physics().body_rigids(self)
@@ -325,19 +384,21 @@ class Character:
         m = self.m
         h = self.head
         m.add("skin", h.mesh(), m.skin_fixed("頭"), normals=lambda v: norm((v - h.c) / h.r))  # 顔の影を球のように滑らかに
-        # 耳：頭の横の少し後ろ、高さは眉の下から鼻の下まで。上を後ろへ傾け、面は外のやや前を向く
+        # 耳：アニメの 3D モデル（ref の N4D）に合わせ、目の中ほどから鼻の下までの高さ（頭の高さの 2 割）、
+        # 頭の横の少し後ろに付け、後ろの縁を 30° ほど外へ立て、上を外へ開く
         for s in (1, -1):
             phi = s * (np.pi / 2 + 0.15)
             p = h.surface(0.40, phi)
-            n = np.array([np.sin(phi - s * 0.45), 0.0, -np.cos(phi - s * 0.45)])
-            u = np.array([0.0, np.cos(0.28), np.sin(0.28)])
-            f = norm(np.cross(n, u))
-            ec = p + n * 0.0045 + u * 0.002
-            m.add("skin", ellipsoid(ec, [0.0040, 0.0200, 0.0115], rot_axes(n, u, f), nu=20, nv=12), m.skin_fixed("頭"))
-            # 耳の縁（上から後ろを回って耳たぶへ）。外へ立てて、輪郭とくぼみの線が出るようにする
-            rim = [ec + n * 0.0035 + u * (0.0175 * np.cos(a)) + f * s * (0.0100 * np.sin(a))
-                   for a in np.linspace(-0.5, 3.0, 14)]
-            m.add("skin", tube(rim, np.linspace(0.0022, 0.0016, 14), n=8), m.skin_fixed("頭"))
+            out = np.array([np.sin(phi), 0.0, -np.cos(phi)])          # 頭の外向き
+            back = np.array([-np.cos(phi) * s, 0.0, -np.sin(phi) * s])  # 頭の表面に沿って後ろ向き
+            back = norm(back - out * (back @ out))
+            up = norm(np.array([0.0, 1.0, 0.18]))                     # 上をやや後ろへ倒す
+            n = norm(out * np.cos(0.55) - back * np.sin(0.55))          # 面は外のやや前を向く（後ろの縁が立つ）
+            n, up = norm(n * np.cos(0.25) - up * np.sin(0.25)), norm(up * np.cos(0.25) + n * np.sin(0.25))  # 上を外へ開く
+            bk = norm(np.cross(up, n)) * (1 if np.cross(up, n) @ back > 0 else -1)
+            outer, inner = ear(p + back * 0.0070 + out * 0.0010, n, up, bk)
+            m.add("skin", outer, m.skin_fixed("頭"))
+            m.add("ear_in", inner, m.skin_fixed("頭"))
         neck = np.array([[0, 0.785, 0.008], [0, 0.835, 0.004], [0, 0.895, 0.002]])
         m.add(neck_mat, tube(neck, [0.023, 0.0195, 0.019], n=16), m.skin_auto(["上半身2", "首", "頭"], {"頭": 1.3}))
 
