@@ -91,6 +91,7 @@ class Model:
         self.frames = []
         self.textures = []
         self.rigids, self.joints = [], []
+        self.default_toon_tex = None  # toon_tex を省いた材質に使うトゥーン
 
     # ---- 材質 ----
     def material(self, key, name, color, double=False, edge=True, toon=1, edge_size=0.6, shade=0.4,
@@ -103,6 +104,7 @@ class Model:
             flags |= pmx.MAT_DOUBLE
         if edge:
             flags |= pmx.MAT_EDGE
+        toon_tex = toon_tex or self.default_toon_tex
         c = tuple(float(x) for x in color)
         ec = tuple(max(0.0, x * 0.35) for x in c)
         diffuse = (1.0, 1.0, 1.0) if tex else c

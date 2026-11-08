@@ -171,6 +171,7 @@ class Character:
         self.mouth = dict(rx=0.0075, ry=0.0016, smile=-0.8, open_bottom=1.0)
         self.mouth.update(mouth or {})
         m = model
+        m.default_toon_tex = tex.toon("toon_cloth.png", (0.80, 0.78, 0.88))
         m.material("skin", "肌", skin_color, toon_tex=tex.toon("toon_skin.png", (1.0, 0.82, 0.80)))
         self._rig()
 
@@ -334,7 +335,8 @@ class Character:
         h = self.head
         E = self.eye
         T = self.tex
-        noedge = dict(edge=False, toon=0, shadow=False)
+        # 目や頬は陰影で灰色にならないよう、真っ白なトゥーンにする
+        noedge = dict(edge=False, shadow=False, toon_tex=T.toon("toon_flat.png", (1, 1, 1)))
         m.material("eye_white", "白目", (1, 1, 1), tex=T.eye_white(), **noedge)
         m.material("iris", "瞳", self.eye_color, tex=T.iris("iris.png", self.eye_color), **noedge)
         m.material("lash", "まつ毛", (0.1, 0.06, 0.07), tex=T.lash(), **noedge)
@@ -409,6 +411,12 @@ class Character:
                                                  0.012)[0])
 
     # ---- 髪 ----
+    def hair_material(self, key, name, color, tip=None):
+        """筋の入った髪テクスチャと、上寄りに光の輪が出るスフィアを付けた材質。"""
+        T = self.tex
+        return self.m.material(key, name, color, tex=T.hair(f"hair_{key}.png", color, tip),
+                               sphere=T.hair_sphere(), sphere_mode=2)
+
     def hair_surface(self, scale=(1.10, 1.09, 1.10), lift=(0, 0.004, 0.006)):
         return self.head.c + np.array(lift), self.head.r * np.array(scale)
 
@@ -430,7 +438,11 @@ class Character:
         tg = norm(np.gradient(path, axis=0))
         sides = norm(np.asarray(sides, float) - np.einsum("ij,ij->i", np.asarray(sides, float), tg)[:, None] * tg)
         nn = norm(np.cross(tg, sides))
-        rings = [ring(path[i], sides[i], nn[i], widths[i], thick[i], 10) for i in range(n)]
+        # 断面は外側がふくらんだ三日月形にして、束に厚みを出す（nn は頭の内側を向く）
+        a = np.arange(12) / 12 * TAU
+        ca, sa = np.cos(a), np.sin(a)
+        rings = [path[i] + np.outer(ca * widths[i], sides[i])
+                 + np.outer(sa * thick[i] - 1.3 * thick[i] * (1 - ca ** 2), nn[i]) for i in range(n)]
         if isinstance(mats, str):
             mats = [mats] * n
         start = 0

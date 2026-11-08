@@ -26,8 +26,8 @@ def build(out_dir):
     m.material("fur", "ファー", FUR, toon=1)
     m.material("glove", "手袋", GLOVE, toon=0)
     m.material("skirt", "スカート", COAT, double=True, toon=0)
-    m.material("hair", "髪", HAIR, toon=0)
-    m.material("tip", "毛先", TIP, toon=0)
+    c.hair_material("hair", "髪", HAIR)
+    c.hair_material("tip", "毛先", TIP)
     m.material("bow", "リボン", BOW, toon=0)
     m.material("mouth_in", "口の中", (0.35, 0.10, 0.10), edge=False, toon=0)
 
