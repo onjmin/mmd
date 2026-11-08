@@ -81,19 +81,26 @@ def hair(c):
         cover = np.clip((0.30 - th) / 0.85, 0, 1)
         e_end = 0.24 - 0.75 * cover
         c.bang("hair", th, e_end, 0.021, e_start=1.25, pointy=False, lift_end=1.07 + 0.03 * cover, sway=-0.12 * cover)
-    # ボブ
-    for th in np.linspace(0.9, np.pi, 8):
+    # あごの長さのボブ：横は口の下、後ろはうなじで切れ、毛先は外へはねる
+    for th in np.linspace(0.9, np.pi, 9):
         for sg in ((1, -1) if th < np.pi - 1e-3 else (1,)):
-            c.drape("hair", sg * th, 0.815 if th < 1.4 else 0.800, 0.030, flare=0.0, pointy=True)
-    # 右側のサイドポニー
-    base = np.array([-0.070, 0.957, 0.045])
-    path = catmull([base, [-0.100, 0.925, 0.065], [-0.112, 0.835, 0.080], [-0.104, 0.720, 0.076],
-                    [-0.090, 0.630, 0.062]], 24)
-    n = len(path)
-    t = np.linspace(0, 1, n)
-    mats = ["tip" if p[1] < 0.70 else "hair" for p in path]
-    c.strand(path, 0.032 * (1 - 0.85 * t ** 2) + 0.004, 0.022 * (1 - 0.8 * t ** 2) + 0.003,
-             np.tile([0, 0, 1.0], (n, 1)), mats, skin=c.hair_chain(path, 0.92, 4, 0.022))
-    # 頭の上の大きなリボン
-    for mesh in parts.bow([-0.060, 0.977, 0.050], 0.040, 0.026, tilt=0.55, facing=(-0.6, 0.2, 1.0)):
+            y_end = 0.850 - 0.014 * (th - 0.9) / (np.pi - 0.9)
+            c.drape("hair", sg * th, y_end, 0.032, flare=0.0, pointy=True, splay=0.30, wave=0.003)
+    # 右の耳の後ろで結んだサイドポニー。肩の後ろを波打って腰の上まで垂れ、毛先が水色になる
+    base = np.array([-0.052, 0.928, 0.050])
+    for k, (dx, dz, ln) in enumerate([(0.000, 0.000, 1.00), (-0.012, 0.010, 0.93), (0.010, 0.012, 0.88),
+                                       (-0.006, -0.010, 0.82), (0.008, -0.006, 0.76)]):
+        ctrl = [base, [-0.098, 0.902, 0.058], [-0.130 + dx, 0.835, 0.060 + dz], [-0.128 + dx, 0.760, 0.066 + dz],
+                [-0.140 + 1.4 * dx, 0.690, 0.060 + dz], [-0.124 + 2.0 * dx, 0.600, 0.052 + dz]]
+        path = catmull(ctrl, 30)
+        path = path[: int(len(path) * ln)]
+        n = len(path)
+        t = np.linspace(0, 1, n)
+        path = path + np.outer(0.010 * np.sin(t * 9 + k * 1.3) * np.clip(t * 3, 0, 1), [1.0, 0, 0.4])
+        mats = ["tip" if p[1] < 0.715 else "hair" for p in path]
+        c.strand(path, 0.028 * np.sin(np.pi * np.clip(t * 0.9 + 0.1, 0, 1)) ** 0.6 + 0.004,
+                 0.012 * (1 - 0.6 * t) + 0.003, np.tile([0, 0, 1.0], (n, 1)), mats,
+                 skin=c.hair_chain(path, 0.92, 4, 0.020))
+    # 結び目の大きなリボン。頭の後ろから左右に輪が見える
+    for mesh in parts.bow([-0.034, 0.940, 0.066], 0.058, 0.034, tilt=0.30, facing=(-0.25, 0.1, 1.0)):
         m.add("bow", mesh, m.skin_fixed("頭"))

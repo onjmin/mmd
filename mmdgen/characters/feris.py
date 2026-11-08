@@ -63,9 +63,11 @@ def hair(c):
     for th in np.linspace(-0.9, 0.9, 11):
         mat = "bang" if abs(th) < 0.30 else "hair"
         c.bang(mat, th, 0.20 - 0.25 * abs(th), 0.022, e_start=1.15, pointy=True, lift_end=1.10, sway=0.25 * th)
-    for th in np.linspace(0.95, np.pi, 8):
+    # 短いボブ：横は口の高さ、後ろはうなじで切れ、毛先は外へはねる
+    for th in np.linspace(0.95, np.pi, 9):
         for sg in ((1, -1) if th < np.pi - 1e-3 else (1,)):
-            c.drape("hair", sg * th, 0.790, 0.030, flare=0.0, pointy=True, wave=0.004)
+            y_end = 0.858 - 0.016 * (th - 0.95) / (np.pi - 0.95)
+            c.drape("hair", sg * th, y_end, 0.034, flare=0.0, pointy=True, splay=0.35, wave=0.003)
 
 
 def hat(c):
