@@ -30,9 +30,9 @@ TORSO = [  # y, rx, rz, cz（cz は +Z = 背中側へのずれ）
 
 LEG = [  # y, 半径, x, z
     (0.565, 0.046, 0.040, 0.004),
-    (0.525, 0.056, 0.047, 0.004),
-    (0.450, 0.050, 0.048, 0.000),
-    (0.370, 0.041, 0.047, -0.002),
+    (0.525, 0.061, 0.049, 0.004),
+    (0.450, 0.055, 0.049, 0.000),
+    (0.370, 0.044, 0.047, -0.002),
     (0.300, 0.033, 0.046, -0.004),
     (0.270, 0.032, 0.046, -0.003),
     (0.220, 0.035, 0.046, 0.004),
@@ -83,7 +83,7 @@ class Head:
         loc = np.array(loc, float)
         y = loc[..., 1]
         t = np.clip(-y / self.r[1], 0, 1)
-        loc[..., 0] *= 1 - 0.34 * t ** 1.5
+        loc[..., 0] *= 1 - 0.50 * t ** 1.25
         front = loc[..., 2] < 0
         loc[..., 2] = np.where(front, loc[..., 2] * (1 - 0.10 * t), loc[..., 2] * (1 - 0.25 * t))
         loc[..., 1] *= 1 + 0.06 * t
@@ -166,7 +166,7 @@ class Character:
         self.skin_color = skin_color
         self.eye_color = np.array(eye_color, float)
         self.bust = bust
-        self.eye = dict(yaw=0.37, pitch=-0.10, rx=0.0195, ry=0.023, top=0.85, tilt=0.0)
+        self.eye = dict(yaw=0.35, pitch=-0.13, rx=0.0205, ry=0.0185, top=0.85, tilt=0.0)
         self.eye.update(eye or {})
         self.mouth = dict(rx=0.0075, ry=0.0016, smile=-0.8, open_bottom=1.0)
         self.mouth.update(mouth or {})
@@ -423,10 +423,10 @@ class Character:
         return self.m.material(key, name, color, tex=T.hair(f"hair_{key}.png", color, tip),
                                sphere=T.hair_sphere(), sphere_mode=2)
 
-    def hair_surface(self, scale=(1.10, 1.09, 1.10), lift=(0, 0.004, 0.006)):
+    def hair_surface(self, scale=(1.06, 1.05, 1.07), lift=(0, 0.004, 0.006)):
         return self.head.c + np.array(lift), self.head.r * np.array(scale)
 
-    def hair_cap(self, mat, keep=None, scale=(1.10, 1.09, 1.10)):
+    def hair_cap(self, mat, keep=None, scale=(1.06, 1.05, 1.07)):
         c, r = self.hair_surface(scale)
         if keep is None:
             def keep(d):
@@ -461,7 +461,7 @@ class Character:
                     self.m.add(mats[start], mesh, skin)
                 start = i
 
-    def bang(self, mat, theta, e_end, width, thick=0.006, e_start=1.25, pointy=True, scale=(1.10, 1.09, 1.10),
+    def bang(self, mat, theta, e_end, width, thick=0.006, e_start=1.25, pointy=True, scale=(1.06, 1.05, 1.07),
              lift_end=1.07, mats=None, sway=0.0):
         c, r = self.hair_surface(scale)
         phis = np.linspace(e_start, e_end, 12)
@@ -475,7 +475,7 @@ class Character:
         self.strand(path, w, thick, sides, mats or mat, blunt=not pointy)
 
     def drape(self, mat, theta, y_end, width, thick=0.007, e0=1.05, flare=0.10, pointy=True,
-              scale=(1.10, 1.09, 1.10), mats_fn=None, clearance=(0.100, 0.090, 0.074), wave=0.0, bones=0):
+              scale=(1.06, 1.05, 1.07), mats_fn=None, clearance=(0.100, 0.090, 0.074), wave=0.0, bones=0):
         """頭から垂れ下がる髪の束。体（肩・胸）をよけて外側に広がる。bones を渡すと物理で揺れる。"""
         c, r = self.hair_surface(scale)
         h = np.array([np.sin(theta), 0.0, -np.cos(theta)])

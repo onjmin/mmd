@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from ..body import Character, Head, SIDES, finish, joints
+from ..body import ARM_ANGLE, Character, Head, SIDES, finish, joints
 from ..builder import Model
 from ..textures import TextureSet
 from ..geom import MeshData, catmull, ellipsoid, loft, ring, torus, tube, TAU
@@ -12,7 +12,7 @@ BLACK = (0.15, 0.14, 0.17)
 RED = (0.78, 0.14, 0.17)
 PINK = (1.0, 0.50, 0.70)
 PALE_PINK = (1.0, 0.78, 0.90)
-HAIR = (0.11, 0.11, 0.14)
+HAIR = (0.19, 0.19, 0.24)  # 立ち絵の黒髪は灰色寄りでつやがある
 TEAL = (0.16, 0.66, 0.56)
 GOLD = (0.78, 0.62, 0.32)
 
@@ -42,14 +42,19 @@ def build(out_dir):
     c.build_face()
 
     torso = c.skin_torso()
-    # 胸元の開き・裾と襟の赤い縁取り
-    m.add("skin", ellipsoid([0, 0.716, -0.052], [0.016, 0.010, 0.010]), m.skin_fixed("上半身2"))
+    # 襟のすぐ下の横長の開き・裾と襟の赤い縁取り
+    m.add("skin", ellipsoid([0, 0.728, -0.050], [0.026, 0.011, 0.012]), m.skin_fixed("上半身2"))
     m.add("red", parts.band_around_torso(0.662, 0.652, 1.04, steps=2), torso)
     # 首の下半分を覆う立て襟と、その縁の赤
     m.add("black", tube([[0, 0.784, 0.008], [0, 0.812, 0.006], [0, 0.836, 0.004]], [0.0255, 0.0225, 0.0222], n=20),
           m.skin_auto(["上半身2", "首"]))
     m.add("red", torus([0, 0.836, 0.004], [0, 1, 0], 0.0222, 0.0025), m.skin_fixed("首"))
-    m.add("red", tube([[0, 0.79, -0.044], [0, 0.745, -0.057]], 0.0025), m.skin_fixed("上半身2"))
+    # 襟の金ボタンと、胸の上の赤い飾り結び 2 本
+    m.add("gold", ellipsoid([0, 0.822, -0.0235], [0.0035] * 3, nu=10, nv=6), m.skin_fixed("首"))
+    for y in (0.772, 0.756):
+        z = -torso_z(y)
+        m.add("red", tube([[-0.014, y, z + 0.004], [0, y - 0.001, z], [0.014, y, z + 0.004]], 0.0022, n=6),
+              m.skin_fixed("上半身2"))
     # ベルトとバックル
     m.add("black", parts.band_around_torso(0.578, 0.560, 1.07, steps=3), torso)
     m.add("gold", ellipsoid([0, 0.569, -0.052], [0.016, 0.011, 0.004]), m.skin_fixed("下半身"))
@@ -57,13 +62,15 @@ def build(out_dir):
     for jp, en, s in SIDES:
         arm = c.skin_arm(jp)
         # 大きな袖（肩は出す）
-        m.add("sleeve", parts.sleeve(s, 0.055, 0.30, [0.034, 0.050, 0.070, 0.088, 0.100, 0.104]), arm)
-        m.add("red", parts.sleeve(s, 0.30, 0.345, [0.105, 0.106, 0.103], n=20), arm)
-        m.add("red", parts.arm_torus(s, 0.058, 0.034, 0.004), arm)
-        # 腰布：脚の外側を覆い、裾が炎になる
+        sleeve, cuff = balloon_sleeve(s)
+        m.add("sleeve", sleeve, arm)
+        m.add("red", cuff, arm)
+        m.add("red", parts.arm_torus(s, 0.085, 0.029, 0.0035), arm)
+        # 腰布：腰の横から垂れて脚の外〜後ろを覆い（前は開く）、裾が炎になる
         leg = c.skin_leg(jp)
-        a0, a1 = (-1.75, 1.75) if s > 0 else (np.pi - 1.75, np.pi + 1.75)
-        radius = lambda y: 0.064 + 0.040 * (0.57 - y) / 0.57  # 裾へ向けて広がる
+        mid = 0.50 if s > 0 else np.pi - 0.50  # 0 が外側、π/2 が後ろ
+        a0, a1 = mid - 1.60, mid + 1.60
+        radius = lambda y: 0.066 + 0.100 * ((0.57 - y) / 0.57) ** 1.3  # 裾へ向けて広がる
         for y0, y1, mat, steps in [(0.570, 0.200, "red_d", 9), (0.200, 0.150, "meander", 2),
                                    (0.150, 0.070, "pink_d", 4), (0.070, 0.004, "pale_d", 4)]:
             jag = (lambda a: 0.035 * np.abs(np.sin(a * 4.0))) if mat == "pale_d" else None
@@ -78,6 +85,35 @@ def build(out_dir):
     hair(c)
     finish(m)
     return m
+
+
+def torso_z(y):
+    rx, rz, cz = parts.torso_r(y)
+    return rz - cz
+
+
+def balloon_sleeve(s, t0=0.09, t1=0.33, n=22):
+    """二の腕から始まる風船袖。下へ垂れて膨らみ、袖口の赤い筒で絞る。返り値は (袖, 袖口)。"""
+    d = parts.arm_point(s, 1.0) - parts.arm_point(s, 0.0)
+    d /= np.linalg.norm(d)
+    up = np.array([s * np.sin(ARM_ANGLE), np.cos(ARM_ANGLE), 0.0])
+    back = np.array([0, 0, 1.0])
+    radii = [0.030, 0.056, 0.078, 0.093, 0.100, 0.098, 0.086, 0.064]
+    ts = np.linspace(t0, t1, len(radii))
+    sag = lambda r: max(0.0, r - 0.028) * 0.8  # 上は腕に乗り、膨らんだぶん下に垂れる
+    rings, centers = [], []
+    for t, r in zip(ts, radii):
+        c = parts.arm_point(s, t) - up * sag(r)
+        rings.append(ring(c, back, up, r * 0.92, r, n))
+        centers.append(c)
+    sleeve = loft(rings, centers=centers)
+    cr, cc = [], []
+    end = parts.arm_point(s, t1) - up * sag(radii[-1])
+    for k, (dt, r) in enumerate([(0.0, 0.062), (0.030, 0.065), (0.060, 0.063)]):
+        c = end + d * dt
+        cr.append(ring(c, back, up, r * 0.92, r, n))
+        cc.append(c)
+    return sleeve, loft(cr, centers=cc)
 
 
 def shoulder_mark(s, t=0.045, w=0.014, h=0.008, r=0.0275):

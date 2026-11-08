@@ -10,6 +10,11 @@
   #ui label { display: block; margin: 2px 0; }
   #ui input[type=range] { width: 120px; vertical-align: middle; }
   button { margin: 2px 2px 2px 0; }
+  /* 比較モード：左に立ち絵、右にモデル */
+  #ref { display: none; position: fixed; left: 0; top: 0; width: 50vw; height: 100vh; background: #e9e6ef no-repeat center / contain; }
+  body.compare #ref { display: block; }
+  body.compare #ui { display: none; }
+  body.compare canvas { position: fixed; left: 50vw; top: 0; }
 </style>
 <script type="importmap">
 { "imports": {
@@ -20,6 +25,7 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.150.1/examples/jsm/libs/ammo.wasm.js"></script>
 </head>
 <body>
+<div id="ref"></div>
 <div id="ui">
   <div>
     <button data-model="tabane_roze">ロゼ</button>
@@ -45,9 +51,14 @@ import { MMDPhysics } from "three/addons/animation/MMDPhysics.js";
 
 const ammoReady = Ammo().then((A) => { window.Ammo = A; });
 
+// 比較モード: ?m=キー&ref=1（全身）または &ref=face&fb=x0,y0,x1,y1（立ち絵の顔の範囲を 0〜1 で）
+const Q = new URLSearchParams(location.search);
+const compare = Q.get("ref");
+if (compare) document.body.classList.add("compare");
+const W = () => (compare ? innerWidth / 2 : innerWidth);
 const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
 renderer.setPixelRatio(devicePixelRatio);
-renderer.setSize(innerWidth, innerHeight);
+renderer.setSize(W(), innerHeight);
 document.body.appendChild(renderer.domElement);
 const effect = new OutlineEffect(renderer);
 const scene = new THREE.Scene();
@@ -58,7 +69,7 @@ const LIGHT = 0x99 / 255;
 const light = new THREE.DirectionalLight(0x999999);
 light.position.set(-0.5, 1, 1);
 scene.add(light);
-const camera = new THREE.PerspectiveCamera(30, innerWidth / innerHeight, 0.1, 500);
+const camera = new THREE.PerspectiveCamera(30, W() / innerHeight, 0.1, 500);
 const controls = new OrbitControls(camera, renderer.domElement);
 let mesh = null, physics = null, posing = false, t = 0;
 
@@ -102,7 +113,40 @@ function load(name) {
       box.appendChild(l);
     });
     view("front");
+    if (compare) setupCompare(name);
   }, undefined, (e) => console.error(e));
+}
+
+// 立ち絵に合わせて腕を下ろし、同じ大きさで写す
+function setupCompare(name) {
+  const el = document.getElementById("ref");
+  el.style.backgroundImage = `url(../ref/${name}.png)`;
+  document.getElementById("physics").checked = false;
+  const arms = +(Q.get("arms") ?? 0.62);
+  bone("左腕").rotation.set(0, 0, -arms);
+  bone("右腕").rotation.set(0, 0, arms);
+  const h = new THREE.Box3().setFromObject(mesh).max.y;
+  const fov = camera.fov * Math.PI / 180;
+  if (compare === "face") {
+    const [x0, y0, x1, y1] = (Q.get("fb") || "0.3,0,0.7,0.3").split(",").map(Number);
+    const img = new Image();
+    img.onload = () => {
+      // 枠 (x0..x1, y0..y1) が左半分いっぱいになるよう拡大する
+      const bw = (x1 - x0) * img.width, bh = (y1 - y0) * img.height;
+      const k = Math.min(el.clientWidth / bw, el.clientHeight / bh);
+      el.style.backgroundSize = `${img.width * k}px ${img.height * k}px`;
+      el.style.backgroundPosition = `${el.clientWidth / 2 - (x0 + x1) / 2 * img.width * k}px ${el.clientHeight / 2 - (y0 + y1) / 2 * img.height * k}px`;
+    };
+    img.src = `../ref/${name}.png`;
+    const span = +(Q.get("span") ?? 0.30);  // 写す高さ（身長比）
+    const cy = h * +(Q.get("cy") ?? 0.88);
+    controls.target.set(0, cy, 0);
+    camera.position.set(0, cy, span * h / 2 / Math.tan(fov / 2));
+  } else {
+    controls.target.set(0, h * 0.5, 0);
+    camera.position.set(0, h * 0.5, h * 0.53 / Math.tan(fov / 2));
+  }
+  controls.update();
 }
 
 function bone(n) { return mesh.skeleton.bones.find((b) => b.name === n); }
@@ -133,8 +177,8 @@ renderer.setAnimationLoop(() => {
   effect.render(scene, camera);
 });
 addEventListener("resize", () => {
-  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
+  camera.aspect = W() / innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(W(), innerHeight);
 });
 load(new URLSearchParams(location.search).get("m") || "tabane_roze");
 </script>
