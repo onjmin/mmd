@@ -20,7 +20,7 @@ GOLD = (0.78, 0.62, 0.32)
 def build(out_dir):
     m = Model("束音ロゼ", "Tabane Roze", "束音ロゼ（非公式・二次創作モデル）", 165)
     c = Character(m, tex=TextureSet(out_dir), hair_color=HAIR, skin_color=(1.0, 0.86, 0.76), eye_color=(0.12, 0.62, 0.46), bust=1.12,
-                  mouth=dict(smile=-1.2))
+                  mouth=dict(rx=0.0100, ry=0.0009, smile=-2.0))
     m.material("black", "服", BLACK, toon=0)
     m.material("red", "赤", RED, toon=0)
     m.material("red_d", "腰布", RED, double=True, toon=0)
@@ -38,7 +38,7 @@ def build(out_dir):
     m.material("jade", "髪飾り（緑）", (0.40, 0.80, 0.62), toon=0)
 
     c.build_body(torso_bands=[(1.0, "black"), (0.655, "skin"), (0.566, "black")],
-                 leg_bands=[(1.0, "black"), (0.522, "skin")], arm_bands=[(-1.0, "skin")])
+                 leg_bands=[(1.0, "black"), (0.538, "skin")], arm_bands=[(-1.0, "skin")])
     c.build_face()
 
     torso = c.skin_torso()
@@ -73,12 +73,16 @@ def build(out_dir):
         radius = lambda y: 0.066 + 0.100 * ((0.57 - y) / 0.57) ** 1.3  # 裾へ向けて広がる
         for y0, y1, mat, steps in [(0.570, 0.200, "red_d", 9), (0.200, 0.150, "meander", 2),
                                    (0.150, 0.070, "pink_d", 4), (0.070, 0.004, "pale_d", 4)]:
-            jag = (lambda a: 0.035 * np.abs(np.sin(a * 4.0))) if mat == "pale_d" else None
+            jag = (lambda a: 0.060 * np.abs(np.sin(a * 5.0)) ** 1.5) if mat == "pale_d" else None
             grow = lambda t, y0=y0, y1=y1: radius(y0 + (y1 - y0) * t) / parts.leg_at(y0 + (y1 - y0) * t, s)[0]
             mesh = parts.leg_tube(s, y0, y1, grow, steps=steps, n=26, a0=a0, a1=a1, jag=jag)
             # 雷文は 1 マスが帯の高さと同じくらいになるよう横にくり返す
             m.add(mat, mesh, leg, uv=mesh.uv * [7.0, 1.0] if mat == "meander" else None)
-        m.add("black", parts.foot(s, r=(0.024, 0.022, 0.058)), m.skin_fixed(jp + "足首"))
+        # 足元は炎に包まれて見えない：足首から下を、上へ揺らめく炎の輪で囲む
+        for y0, y1, mat, g, amp in [(0.000, 0.120, "pink_d", 1.9, 0.050), (-0.004, 0.070, "pale_d", 2.2, 0.040)]:
+            m.add(mat, parts.leg_tube(s, y0, y1, g, steps=3, n=24,
+                                      jag=lambda a, amp=amp: amp * np.abs(np.sin(a * 3.0 + s)) ** 1.5),
+                  m.skin_fixed(jp + "足首"))
     # 左の二の腕の「OJ」
     m.add("oj", shoulder_mark(1.0), c.skin_arm("左"))
 
@@ -140,24 +144,27 @@ def hair(c):
     c.hair_cap("hair")
     rng = np.random.default_rng(7)  # 束ごとに太さと長さを少しずつ変え、筋がそろって見えないようにする
     # 姫カットの前髪：隣と重なる幅にして、毛先の高さを少し乱す
-    for th in np.linspace(-0.95, 0.95, 13):
-        side = abs(th) > 0.62
-        e_end = (-0.55 if side else 0.20) + rng.uniform(-0.04, 0.04)
-        c.bang("hair", th + rng.uniform(-0.03, 0.03), e_end, 0.024 * rng.uniform(0.8, 1.25), thick=0.005,
-               e_start=1.25, pointy=False, lift_end=1.12 if side else 1.08)
+    for th in np.linspace(-0.66, 0.66, 11):
+        c.bang("hair", th + rng.uniform(-0.03, 0.03), 0.20 + rng.uniform(-0.04, 0.04), 0.024 * rng.uniform(0.8, 1.25),
+               thick=0.005, e_start=1.25, pointy=False, lift_end=1.08)
+    # 頬の横に細く垂れる髪（顔の幅を隠さないよう、頬の端に沿わせる）
+    for sg in (1, -1):
+        for th, e_end, w in [(0.86, -0.62, 0.013), (0.96, -0.70, 0.012)]:
+            c.bang("hair", sg * th, e_end + rng.uniform(-0.03, 0.03), w, thick=0.004, e_start=1.25, pointy=True,
+                   lift_end=1.03)
     # 横の姫毛：細い束を重ね、毛先は外へ散らす。奥の緑は胸の下〜へそまで
     for sg in (1, -1):
-        for th, y_end, w, mat_low in [(1.02, 0.71, 0.014, "hair"), (1.12, 0.69, 0.012, "hair"),
-                                      (1.22, 0.73, 0.011, "hair"), (1.34, 0.64, 0.014, "teal"),
+        for th, y_end, w, mat_low in [(1.10, 0.71, 0.014, "hair"), (1.18, 0.69, 0.012, "hair"),
+                                      (1.26, 0.73, 0.011, "hair"), (1.34, 0.64, 0.014, "teal"),
                                       (1.48, 0.62, 0.016, "teal")]:
             c.drape("hair", sg * (th + rng.uniform(-0.03, 0.03)), y_end + rng.uniform(-0.015, 0.015),
-                    w * rng.uniform(0.85, 1.2), thick=0.005, pointy=True, flare=0.22, bones=3,
+                    w * rng.uniform(0.85, 1.2), thick=0.005, pointy=True, flare=0.10, bones=3, splay=0.45, clearance=(0.082, 0.080, 0.070),
                     mats_fn=lambda p, ml=mat_low: ml if p[1] < 0.79 else "hair")
     # 後ろ髪（肩甲骨くらいまで）：幅と長さをばらし、毛先をとがらせる
     for th in np.linspace(1.70, np.pi, 8):
         for sg in ((1, -1) if th < np.pi - 1e-3 else (1,)):
-            c.drape("hair", sg * th, 0.67 + rng.uniform(-0.03, 0.03), 0.032 * rng.uniform(0.8, 1.25),
-                    flare=0.10, pointy=True, bones=3)
+            c.drape("hair", sg * th, 0.72 + rng.uniform(-0.03, 0.03), 0.032 * rng.uniform(0.8, 1.25),
+                    flare=0.04, pointy=True, bones=3)
     # 頭の両側の小さな結い髪と陰陽玉の髪飾り
     hc, hr = c.hair_surface()
     for sg in (1, -1):

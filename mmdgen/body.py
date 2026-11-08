@@ -423,10 +423,10 @@ class Character:
         return self.m.material(key, name, color, tex=T.hair(f"hair_{key}.png", color, tip),
                                sphere=T.hair_sphere(), sphere_mode=2)
 
-    def hair_surface(self, scale=(1.06, 1.05, 1.07), lift=(0, 0.004, 0.006)):
+    def hair_surface(self, scale=(1.06, 1.02, 1.07), lift=(0, 0.000, 0.006)):
         return self.head.c + np.array(lift), self.head.r * np.array(scale)
 
-    def hair_cap(self, mat, keep=None, scale=(1.06, 1.05, 1.07)):
+    def hair_cap(self, mat, keep=None, scale=(1.06, 1.02, 1.07)):
         c, r = self.hair_surface(scale)
         if keep is None:
             def keep(d):
@@ -461,7 +461,7 @@ class Character:
                     self.m.add(mats[start], mesh, skin)
                 start = i
 
-    def bang(self, mat, theta, e_end, width, thick=0.006, e_start=1.25, pointy=True, scale=(1.06, 1.05, 1.07),
+    def bang(self, mat, theta, e_end, width, thick=0.006, e_start=1.25, pointy=True, scale=(1.06, 1.02, 1.07),
              lift_end=1.07, mats=None, sway=0.0):
         c, r = self.hair_surface(scale)
         phis = np.linspace(e_start, e_end, 12)
@@ -475,8 +475,9 @@ class Character:
         self.strand(path, w, thick, sides, mats or mat, blunt=not pointy)
 
     def drape(self, mat, theta, y_end, width, thick=0.007, e0=1.05, flare=0.10, pointy=True,
-              scale=(1.06, 1.05, 1.07), mats_fn=None, clearance=(0.100, 0.090, 0.074), wave=0.0, bones=0):
-        """頭から垂れ下がる髪の束。体（肩・胸）をよけて外側に広がる。bones を渡すと物理で揺れる。"""
+              scale=(1.06, 1.02, 1.07), mats_fn=None, clearance=(0.100, 0.090, 0.074), wave=0.0, bones=0, splay=0.0):
+        """頭から垂れ下がる髪の束。体（肩・胸）をよけて外側に広がる。bones を渡すと物理で揺れる。
+        splay はあごの高さから下へ行くほど外へ開く量（姫毛を顔から離して広げる）。"""
         c, r = self.hair_surface(scale)
         h = np.array([np.sin(theta), 0.0, -np.cos(theta)])
         pts = []
@@ -489,7 +490,7 @@ class Character:
         ys = np.linspace(c[1], y_end, 16)
         for i, y in enumerate(ys):
             t = 1 - smoothstep(SHOULDER_Y + 0.01, c[1], y)
-            rad = req + (max(req, rcl * 1.06) - req) * t + flare * max(0.0, SHOULDER_Y - y)
+            rad = req + (max(req, rcl * 1.06) - req) * t + flare * max(0.0, SHOULDER_Y - y) + splay * max(0.0, c[1] - 0.06 - y)
             wv = wave * np.sin((c[1] - y) * 40 + theta * 3) * min(1.0, (c[1] - y) * 8)
             pts.append(np.array([c[0], y, c[2]]) + h * (rad + wv))
         path = catmull(pts, 30)
