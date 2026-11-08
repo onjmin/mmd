@@ -153,3 +153,5 @@ __pycache__/
 
 # Blender など外部ツール
 .tools/
+# Neural4D 由来のモデル（素材の再配布可否が不明なので公開しない）
+models/*_n4d/

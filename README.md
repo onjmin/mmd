@@ -42,3 +42,14 @@ http://localhost:8765/viewer/ で three.js の MMDLoader を使って表示す�
 - フェリス：[おんJwiki](https://w.atwiki.jp/openj3/pages/36.html)
 
 どちらの規約も、収益のない利用と広告収益の範囲なら報告なしで使える。それ以外の収益化は公式への個別連絡が要る。自作発言・なりすまし・公序良俗に反する利用は禁止。3D モデル化と MMD には規約で触れていないので、気になる場合は公式に確認すること。
+
+## VRM からの変換
+
+Neural4D などで作った VRM は `blender/vrm_to_pmx.py` で PMX にできる（VRM アドオンと mmd_tools 入りの Blender を使う）。
+骨を MMD の標準名にし、A ポーズ化・足 IK・表情モーフ（まばたき・あいうえお など）を付ける。
+
+```
+blender -b --python blender/vrm_to_pmx.py -- 入力.vrm models/xxx_n4d/xxx_n4d.pmx "モデル名"
+```
+
+Neural4D の出力は元の素材の再配布条件がはっきりしないので、`models/*_n4d/` はリポジトリに入れない。
