@@ -138,6 +138,8 @@ def read(path):
         for _ in range(r.take("i")):
             k = r.take("B")
             r.idx(bs if k == 0 else mos)
+    info["rigid_offset"] = r.o  # 剛体の数が書かれている位置（物理を足し直すときに使う）
+    info["encoding"], info["bone_index_size"], info["rigid_index_size"] = enc, bs, rs
     rigids = []
     for _ in range(r.take("i")):
         name = r.text(enc)

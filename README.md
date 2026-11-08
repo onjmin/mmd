@@ -47,6 +47,7 @@ http://localhost:8765/viewer/ で three.js の MMDLoader を使って表示す�
 
 Neural4D などで作った VRM は `blender/vrm_to_pmx.py` で PMX にできる（VRM アドオンと mmd_tools 入りの Blender を使う）。
 骨を MMD の標準名にし、A ポーズ化・足 IK・表情モーフ（まばたき・あいうえお など）を付ける。
+VRM のスプリングボーン（髪など）には、体の当たり判定と一緒に剛体・ジョイントを付けて揺れるようにする（`mmdgen/pmx_physics.py`）。
 
 ```
 blender -b --python blender/vrm_to_pmx.py -- 入力.vrm models/xxx_n4d/xxx_n4d.pmx "モデル名"

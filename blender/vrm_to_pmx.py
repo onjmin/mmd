@@ -39,6 +39,8 @@ for jp, en in (("左", "left"), ("右", "right")):
 human = {b.bone: b.node.bone_name for b in arm.data.vrm_addon_extension.vrm0.humanoid.human_bones if b.node.bone_name}
 rename = {human[k]: v for k, v in HUMAN.items() if k in human}
 hips = human["hips"]
+# 揺れもの（VRM のスプリングボーン）の根元。名前は変えないので、書き出したあとの物理付けに使う
+swing = [b.bone_name for g in arm.data.vrm_addon_extension.vrm0.secondary_animation.bone_groups for b in g.bones]
 
 bpy.context.view_layer.objects.active = arm
 bpy.ops.object.mode_set(mode="EDIT")
@@ -68,6 +70,7 @@ for b in list(eb):
         kids = list(b.children)
         merge_weights(b.name, par.name)
         for k in kids:
+            k.use_connect = False  # つないだままだと子の根元が親の先へ吸い寄せられる
             k.parent = par
         eb.remove(b)
 for b in eb:
@@ -219,4 +222,8 @@ mmd_root.mmd_root.name_e = name
 bpy.context.view_layer.objects.active = mmd_root
 os.makedirs(os.path.dirname(os.path.abspath(dst)), exist_ok=True)
 bpy.ops.mmd_tools.export_pmx(filepath=dst, scale=12.5, copy_textures_mode="OVERWRITE", sort_materials=True)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from mmdgen.pmx_physics import add_physics  # noqa: E402
+
+print("剛体・ジョイント", add_physics(dst, swing))
 print("WROTE", dst)
