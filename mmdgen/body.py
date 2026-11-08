@@ -299,6 +299,19 @@ class Character:
         m = self.m
         h = self.head
         m.add("skin", h.mesh(), m.skin_fixed("頭"), normals=lambda v: norm((v - h.c) / h.r))  # 顔の影を球のように滑らかに
+        # 耳：頭の横の少し後ろ、高さは眉の下から鼻の下まで。上を後ろへ傾け、面は外のやや前を向く
+        for s in (1, -1):
+            phi = s * (np.pi / 2 + 0.15)
+            p = h.surface(0.40, phi)
+            n = np.array([np.sin(phi - s * 0.45), 0.0, -np.cos(phi - s * 0.45)])
+            u = np.array([0.0, np.cos(0.28), np.sin(0.28)])
+            f = norm(np.cross(n, u))
+            ec = p + n * 0.0045 + u * 0.002
+            m.add("skin", ellipsoid(ec, [0.0040, 0.0200, 0.0115], rot_axes(n, u, f), nu=20, nv=12), m.skin_fixed("頭"))
+            # 耳の縁（上から後ろを回って耳たぶへ）。外へ立てて、輪郭とくぼみの線が出るようにする
+            rim = [ec + n * 0.0035 + u * (0.0175 * np.cos(a)) + f * s * (0.0100 * np.sin(a))
+                   for a in np.linspace(-0.5, 3.0, 14)]
+            m.add("skin", tube(rim, np.linspace(0.0022, 0.0016, 14), n=8), m.skin_fixed("頭"))
         neck = np.array([[0, 0.785, 0.008], [0, 0.835, 0.004], [0, 0.895, 0.002]])
         m.add(neck_mat, tube(neck, [0.023, 0.0195, 0.019], n=16), m.skin_auto(["上半身2", "首", "頭"], {"頭": 1.3}))
 
