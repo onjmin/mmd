@@ -27,8 +27,8 @@ SOCK = (0.97, 0.96, 0.92)
 def build(out_dir):
     m = Model("フェリス", "Feris", "フェリス（非公式・二次創作モデル）", 150)
     c = Character(m, tex=TextureSet(out_dir), hair_color=HAIR, skin_color=(1.0, 0.87, 0.79), eye_color=(0.82, 0.12, 0.12), bust=1.18,
-                  eye=dict(yaw=0.525, h=0.380, rx=0.0205, ry=0.0155, top=0.86, iris=0.64, iris_in=0.04),
-                  mouth=dict(rx=0.0105, ry=0.0038, smile=-0.8, h=0.120, nose_h=0.235, fang=True))
+                  eye=dict(yaw=0.525, h=0.405, rx=0.0205, ry=0.0156, top=0.88, iris=0.62, iris_in=0.04),
+                  mouth=dict(rx=0.0100, ry=0.0036, smile=-0.8, h=0.125, nose_h=0.245, fang=True))
     m.material("top", "タンクトップ", TOP, toon=0)
     m.material("skirt", "スカート", SKIRT, double=True, toon=0)
     m.material("shorts", "インナー", SKIRT, toon=0)
@@ -72,9 +72,9 @@ def build(out_dir):
 def hair(c):
     c.hair_cap("hair")
     for th in np.linspace(-0.92, 0.92, 14):
-        # 目の高さまで下りる、毛先のとがった不ぞろいな前髪（目と目の間にも細い束が下りる）
-        c.bang("hair", th, 0.09 - 0.16 * abs(th) + 0.045 * np.sin(th * 13), 0.0175, e_start=1.15, pointy=True,
-               lift_end=1.08, sway=0.28 * th)
+        # 目の上まで軽やかに下りる、毛先のとがった不ぞろいな前髪
+        c.bang("hair", th, 0.06 - 0.14 * abs(th) + 0.045 * np.sin(th * 13), 0.0175, e_start=1.18, pointy=True,
+               lift_end=1.055, sway=0.26 * th)
     # 短いボブ：横は口の高さ、後ろはうなじで切れ、毛先は外へはねる
     for th in np.linspace(0.95, np.pi, 9):
         for sg in ((1, -1) if th < np.pi - 1e-3 else (1,)):

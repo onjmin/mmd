@@ -20,8 +20,8 @@ BOW = (0.38, 0.15, 0.11)
 def build(out_dir):
     m = Model("蓄音キリコ", "Chikune Kiriko", "蓄音キリコ（非公式・二次創作モデル）", 158)
     c = Character(m, tex=TextureSet(out_dir), hair_color=HAIR, skin_color=(0.86, 0.58, 0.36), eye_color=(0.66, 0.24, 0.12), bust=0.95,
-                  mouth=dict(rx=0.0096, ry=0.0032, smile=-0.6, h=0.120, nose_h=0.235),
-                  eye=dict(yaw=0.515, h=0.380, rx=0.0198, ry=0.0145, top=0.86, iris=0.60, iris_in=0.04))
+                  mouth=dict(rx=0.0094, ry=0.0030, smile=-0.6, h=0.125, nose_h=0.245),
+                  eye=dict(yaw=0.515, h=0.405, rx=0.0198, ry=0.0148, top=0.88, iris=0.60, iris_in=0.04))
     m.material("suit", "インナー", SUIT, toon=0)
     m.material("coat", "コート", COAT, double=True, toon=0)
     m.material("fur", "ファー", FUR, toon=1)
@@ -79,8 +79,8 @@ def hair(c):
     # 斜めぱっつんの前髪。右目（-X 側）を隠す
     for th in np.linspace(-0.95, 0.95, 15):
         cover = np.clip((0.30 - th) / 0.85, 0, 1)
-        e_end = 0.24 - 0.75 * cover
-        c.bang("hair", th, e_end, 0.021, e_start=1.25, pointy=False, lift_end=1.07 + 0.03 * cover, sway=-0.12 * cover)
+        e_end = 0.28 - 0.74 * cover
+        c.bang("hair", th, e_end, 0.0205, e_start=1.25, pointy=False, lift_end=1.065 + 0.03 * cover, sway=-0.12 * cover)
     # あごの長さのボブ：横は口の下、後ろはうなじで切れ、毛先は外へはねる
     for th in np.linspace(0.9, np.pi, 9):
         for sg in ((1, -1) if th < np.pi - 1e-3 else (1,)):

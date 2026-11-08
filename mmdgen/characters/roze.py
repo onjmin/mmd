@@ -23,8 +23,8 @@ KH_YC, KH_RX, KH_RY = 0.746, 0.036, 0.0115
 def build(out_dir):
     m = Model("束音ロゼ", "Tabane Roze", "束音ロゼ（非公式・二次創作モデル）", 165)
     c = Character(m, tex=TextureSet(out_dir), hair_color=HAIR, skin_color=(1.0, 0.86, 0.76), eye_color=(0.12, 0.62, 0.46), bust=1.24,
-                  eye=dict(yaw=0.515, h=0.380, rx=0.0205, ry=0.0155, top=0.86, iris=0.64, iris_in=0.04),
-                  mouth=dict(rx=0.0082, ry=0.0009, smile=1.0, h=0.120, nose_h=0.235))
+                  eye=dict(yaw=0.515, h=0.405, rx=0.0205, ry=0.0156, top=0.88, iris=0.62, iris_in=0.04),
+                  mouth=dict(rx=0.0080, ry=0.0009, smile=1.0, h=0.125, nose_h=0.245))
     m.material("black", "服", BLACK, toon=0)
     m.material("red", "赤", RED, toon=0)
     m.material("red_trim", "赤縁", RED, toon=0, edge=False)
@@ -239,23 +239,23 @@ def hair(c):
     m = c.m
     c.hair_cap("hair")
     rng = np.random.default_rng(7)
-    # 姫カットの前髪：上まつ毛のすぐ上まで下ろし、束のあいだに眉がちらりとのぞく繊細なスリットを作る
+    # 姫カットの前髪：頭頂〜額の肌を隙間なく覆いつつ、毛先で繊細なスリットを入れて眉と額がちらりとのぞく軽やかさを作る
     bang_specs = [
-        (-0.50, -0.09, 0.0110),
-        (-0.37, -0.07, 0.0102),
-        (-0.19, -0.06, 0.0096),
-        (-0.06, -0.06, 0.0102),
-        ( 0.07, -0.06, 0.0102),
-        ( 0.24, -0.06, 0.0096),
-        ( 0.37, -0.07, 0.0102),
-        ( 0.50, -0.09, 0.0110),
+        (-0.50, -0.02, 0.0108),
+        (-0.36,  0.00, 0.0100),
+        (-0.19,  0.01, 0.0094),
+        (-0.06,  0.00, 0.0098),
+        ( 0.07,  0.00, 0.0098),
+        ( 0.23,  0.01, 0.0094),
+        ( 0.36,  0.00, 0.0100),
+        ( 0.50, -0.02, 0.0108),
     ]
     for th, e_end, w in bang_specs:
-        c.bang("hair", th, e_end, w, thick=0.0036, e_start=1.25, pointy=False, lift_end=1.032)
+        c.bang("hair", th, e_end, w, thick=0.0055, e_start=1.25, pointy=False, lift_end=1.032)
     # こめかみ〜頬のすぐ横に段差で垂れる姫毛（目尻のすぐ外から耳の前を覆い、小顔シルエットを作る）
     for sg in (1, -1):
-        for th, e_end, w in [(0.58, -0.28, 0.0105), (0.68, -0.48, 0.0105), (0.79, -0.60, 0.0105), (0.90, -0.66, 0.0105), (1.02, -0.45, 0.0115)]:
-            c.bang("hair", sg * th, e_end, w, thick=0.0040, e_start=1.25, pointy=True, lift_end=1.028)
+        for th, e_end, w in [(0.58, -0.25, 0.0105), (0.68, -0.45, 0.0105), (0.79, -0.57, 0.0105), (0.90, -0.63, 0.0105), (1.02, -0.42, 0.0115)]:
+            c.bang("hair", sg * th, e_end, w, thick=0.0055, e_start=1.25, pointy=True, lift_end=1.030)
     # 結い髪から下がる左右の房：玉の下から外へ張り出し、あごの下で外へはねる。1〜2 本は胸まで、奥の緑は腰まで
     hc, hr = c.hair_surface()
     for sg in (1, -1):
@@ -304,10 +304,10 @@ def hair(c):
             0.5 - (orb_mesh[0][:, 1] - orb[1]) / 0.035,
         ])
         m.add("yinyang", orb_mesh, m.skin_fixed("頭"), uv=np.clip(orb_uv, 0.02, 0.98))
-    # ヘッドセット（左耳）とマイク
-    ear = c.head.c + np.array([c.head.r[0] + 0.006, -0.012, 0.004])  # 頭の横幅に沿わせる
+        # ヘッドセット（左耳）とマイク（あごの輪郭線と重なって二重あごに見えないよう、頬の外側から口元の少し横へすっきり伸ばす）
+    ear = c.head.c + np.array([c.head.r[0] + 0.006, -0.010, 0.004])  # 頭の横幅に沿わせる
     m.add("gray", ellipsoid(ear, [0.007, 0.016, 0.014]), m.skin_fixed("頭"))
-    mic = catmull([ear + np.array([0.002, -0.008, -0.004]), c.head.c + np.array([0.056, -0.046, -0.045]),
-                   c.head.c + np.array([0.030, -0.060, -0.078])], 14)
+    mic = catmull([ear + np.array([0.002, -0.008, -0.004]), c.head.c + np.array([0.056, -0.036, -0.042]),
+                   c.head.c + np.array([0.024, -0.048, -0.072])], 14)
     m.add("gray", tube(mic, 0.0018, n=6), m.skin_fixed("頭"))
-    m.add("gray", ellipsoid(mic[-1], [0.005] * 3, nu=10, nv=6), m.skin_fixed("頭"))
+    m.add("gray", ellipsoid(mic[-1], [0.0045] * 3, nu=10, nv=6), m.skin_fixed("頭"))

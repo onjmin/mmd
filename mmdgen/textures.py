@@ -65,152 +65,142 @@ class TextureSet:
             img[i] = row
         return self.save(Image.fromarray((np.clip(img, 0, 1) * 255).astype(np.uint8), "RGB"), name)
 
-    # ---- 目：白目、瞳、まつ毛の 3 枚（既製アニメモデル KK/N4D と立ち絵の形状・配色に準拠） ----
+    # ---- 目：白目、瞳、まつ毛の 3 枚（既製MMDモデル・立ち絵の形状・配色に準拠） ----
     def eye_white(self, name="eye_white.png"):
-        """上が丸いドーム状、下が緩やかな弧を描くアニメの白目。上部にまぶたの落ち影を入れる。"""
+        """上がすっきりしたアーチ状、下が柔らかな弧を描くMMD美少女の白目。上部にまぶたの淡い落ち影を入れる。"""
         n = 256
         v, u = np.mgrid[0:n, 0:n] / (n - 1)
         x = (u - 0.5) * 2.0  # -1 (目頭) .. +1 (目尻)
-        w = np.maximum(0.0, 1.0 - (x / 0.90) ** 2)
-        y_base = 0.58 - 0.04 * x
-        y_top = y_base - 0.50 * (w ** 0.46)
-        y_bot = y_base + 0.31 * (w ** 0.72)
+        w = np.maximum(0.0, 1.0 - (x / 0.92) ** 2)
+        y_base = 0.57 - 0.035 * x
+        y_top = y_base - 0.46 * (w ** 0.52)
+        y_bot = y_base + 0.33 * (w ** 0.72)
         span = np.maximum(y_bot - y_top, 1e-4)
         tv = (v - y_top) / span
         inside = (w > 0.0) & (tv >= 0.0) & (tv <= 1.0)
         dist_edge = np.minimum(v - y_top, y_bot - v)
         alpha = np.clip(dist_edge * 55.0, 0.0, 1.0) * inside
 
-        # 上まぶたの落ち影
-        shadow_t = np.clip((0.32 - tv) / 0.32, 0.0, 1.0) ** 1.3
-        col = np.ones((n, n, 3), float) * np.array([0.98, 0.98, 0.99])
-        col = col * (1 - shadow_t[..., None]) + np.array([0.80, 0.81, 0.86]) * shadow_t[..., None]
+        # 上まぶたの淡く透明感のある落ち影
+        shadow_t = np.clip((0.28 - tv) / 0.28, 0.0, 1.0) ** 1.4
+        col = np.ones((n, n, 3), float) * np.array([0.99, 0.99, 1.00])
+        col = col * (1 - shadow_t[..., None]) + np.array([0.84, 0.85, 0.90]) * shadow_t[..., None]
         arr = np.dstack([np.clip(col, 0, 1), alpha])
         return self.save(Image.fromarray((arr * 255).astype(np.uint8), "RGBA"), name)
 
     def iris(self, name, color):
-        """既製アニメモデル（KK_EyeL）・立ち絵準拠の瞳：
-        太い黒の外縁リング、上半分を覆う漆黒のシェード、中央の縦長楕円の黒瞳孔、
-        下半分をU字に彩る鮮やかなグラデーション、上部左右2つの白い楕円ハイライト＋左下の小ハイライト。"""
+        """既製MMDモデル（初音ミク・Tda式・N4D等）準拠の透明感とメリハリのある瞳：
+        瞳の上部38%にまぶたの深い濃色シェードを入れ、中央〜下部へ鮮やかに発光するU字クレセントグラデーション、
+        引き締まった瞳孔と外縁リング、左上の大きな丸ハイライト＋右下のサブハイライトを描く。"""
         n = 256 * S
         color = np.asarray(color, float)
         y, x = np.mgrid[0:n, 0:n] / (n - 1)
         dx = (x - 0.50) / 0.48
         dy = (y - 0.50) / 0.48
         r = np.sqrt(dx * dx + dy * dy)
+        ang = np.arctan2(dy, dx)
 
-        dark_hood = color * 0.06 + np.array([0.01, 0.02, 0.02])
-        outer_black = np.array([0.02, 0.02, 0.03])
-        mid_col = np.clip(color * 0.88 + 0.06, 0.0, 1.0)
-        bright_col = np.clip(color * 1.25 + 0.36, 0.0, 1.0)
-        rim_col = np.clip(color * 0.68 + 0.04, 0.0, 1.0)
+        # 上部38%は深く引き締まった濃色シェード（瞳の色味を少し残した濃紺/濃緑/濃茶）、下部は明るく透き通る発光グラデーション
+        top_shade = np.clip(color * 0.16 + 0.015, 0.0, 1.0)
+        mid_col = np.clip(color * 0.85 + 0.05, 0.0, 1.0)
+        bright_col = np.clip(color * 1.30 + 0.36, 0.0, 1.0)
+        outer_ring_col = np.clip(color * 0.14 + 0.01, 0.0, 1.0)
 
-        # 下半分（y >= 0.52）のU字グラデーション
-        t_v = np.clip((y - 0.52) / 0.36, 0.0, 1.0)
-        lower_col = mid_col * (1 - t_v[..., None]) + bright_col * t_v[..., None]
-        # 下縁の内側リム（r = 0.76..0.85）を少し落ち着いた色にして立体感を出す
-        inner_rim = np.clip((r - 0.74) / 0.09, 0.0, 1.0)
-        lower_col = lower_col * (1 - 0.55 * inner_rim[..., None]) + rim_col * (0.55 * inner_rim[..., None])
+        # 上部シェード（y < 0.42）から中央・下部へのしっとりしたグラデーション + 下半分のU字クレセント発光
+        t_upper = np.clip((y - 0.34) / 0.20, 0.0, 1.0)
+        t_upper = t_upper * t_upper * (3 - 2 * t_upper)
+        t_lower = np.clip((y - 0.50) / 0.36, 0.0, 1.0)
+        col = top_shade * (1 - t_upper[..., None]) + mid_col * t_upper[..., None]
+        crescent = t_lower * np.exp(-((r - 0.56) / 0.24) ** 2)
+        col = col * (1 - crescent[..., None]) + bright_col * crescent[..., None]
 
-        # 上半分（y < 0.52）は漆黒のシェード
-        t_hood = np.clip((y - 0.51) * 45.0, 0.0, 1.0)[..., None]
-        col = dark_hood * (1 - t_hood) + lower_col * t_hood
+        # 虹彩の繊細な放射線状の輝き
+        rays = (0.5 + 0.5 * np.cos(ang * 28.0)) * np.exp(-((r - 0.54) / 0.20) ** 2) * np.clip((y - 0.40) / 0.45, 0.0, 1.0)
+        col = np.clip(col + rays[..., None] * (bright_col - mid_col) * 0.22, 0.0, 1.0)
 
-        # 中央の大きな縦長黒瞳孔（U字の内側を作る）とその周囲のわずかな中間色リング
-        pr = np.sqrt((dx / 0.24) ** 2 + ((dy - 0.02) / 0.34) ** 2)
-        p_halo = np.clip((1.22 - pr) * 10.0, 0.0, 1.0) * t_hood[..., 0]
-        col = col * (1 - 0.35 * p_halo[..., None]) + mid_col * (0.35 * p_halo[..., None])
-        p_core = np.clip((1.0 - pr) * 18.0, 0.0, 1.0)[..., None]
-        col = col * (1 - p_core) + dark_hood * p_core
+        # 中央の瞳孔（周囲に明るいハロを伴う上品な縦楕円。驚いた目に見えないよう深みのある濃色にする）
+        pr = np.sqrt((dx / 0.22) ** 2 + ((dy - 0.02) / 0.29) ** 2)
+        p_halo = np.exp(-((pr - 1.15) / 0.26) ** 2) * np.clip((y - 0.40) / 0.42, 0.0, 1.0)
+        col = col * (1 - 0.38 * p_halo[..., None]) + bright_col * (0.38 * p_halo[..., None])
+        pupil_col = np.clip(color * 0.10 + 0.01, 0.0, 1.0)
+        p_core = np.clip((1.0 - pr) * 16.0, 0.0, 1.0)[..., None]
+        col = col * (1 - p_core) + pupil_col * p_core
 
-        # 外周の太い黒リング（r = 0.83..1.00）
-        limbal = np.clip((r - 0.82) * 28.0, 0.0, 1.0)[..., None]
-        col = col * (1 - limbal) + outer_black * limbal
+        # 外周の引き締まったリムリング（r = 0.84..1.00）
+        limbal = np.clip((r - 0.83) * 26.0, 0.0, 1.0)[..., None]
+        col = col * (1 - limbal) + outer_ring_col * limbal
 
-        # 上まぶたアーチに沿う上部クリップ（目頭・目尻の上端で黒目がまつ毛からはみ出さないようにする）
-        arch_top = 0.04 + 0.16 * (dx ** 2)
+        # 上まぶたアーチに沿う上部クリップ
+        arch_top = 0.05 + 0.15 * (dx ** 2)
         alpha = np.clip((1.0 - r) * 36.0, 0.0, 1.0) * np.clip((y - arch_top) * 40.0, 0.0, 1.0)
         img = Image.fromarray((np.dstack([np.clip(col, 0, 1), alpha]) * 255).astype(np.uint8), "RGBA")
         d = ImageDraw.Draw(img)
-        # 上部左右に並ぶ2つの白い横長楕円ハイライト＋左下の小ハイライト（KK_EyeL 準拠）
-        d.ellipse([n * 0.16, n * 0.24, n * 0.41, n * 0.35], fill=_rgb((1, 1, 1), 255))
-        d.ellipse([n * 0.59, n * 0.24, n * 0.84, n * 0.35], fill=_rgb((1, 1, 1), 255))
-        d.ellipse([n * 0.19, n * 0.77, n * 0.37, n * 0.84], fill=_rgb((1, 1, 1), 250))
+        # MMD美少女モデル定番の「左上の大きな丸いメインハイライト」＋「右下の小さなサブハイライト」＋「右上の小さな光点」
+        d.ellipse([n * 0.16, n * 0.20, n * 0.42, n * 0.43], fill=_rgb((1, 1, 1), 255))
+        d.ellipse([n * 0.62, n * 0.65, n * 0.78, n * 0.79], fill=_rgb((1, 1, 1), 245))
+        d.ellipse([n * 0.65, n * 0.25, n * 0.75, n * 0.34], fill=_rgb((1, 1, 1), 220))
         return self.save(img.resize((256, 256), Image.LANCZOS), name)
 
-    def lash(self, name="lash.png", color=(0.06, 0.04, 0.05)):
-        """既製アニメモデル（KK_Eyeline_up）・立ち絵準拠のアイライン：
-        上まぶたの太いドームアーチ、目頭・目尻の赤茶グラデーション、目尻の外側を包むラインとまつ毛スパイク、
-        上部の二重まぶた線、下まぶた中央の短いアイライン。"""
+    def lash(self, name="lash.png", color=(0.10, 0.07, 0.08)):
+        """既製MMDモデル（初音ミク・Tda式等）準拠のすっきり上品なアイライン：
+        目頭をすっきり開け、中央〜目尻にかけて優美な弧を描き、目尻に小さなハネを作る。
+        重たい赤茶のヘルメット状フードを廃止し、柔らかなダークブラウン〜チャコールの洗練されたラインにする。"""
         n = 256 * S
         img = Image.new("RGBA", (n, n), (0, 0, 0, 0))
         d = ImageDraw.Draw(img)
 
-        warm_red = _rgb((0.34, 0.05, 0.06), 255)
-        core_black = _rgb(color, 255)
+        edge_brown = _rgb((0.24, 0.14, 0.15), 255)
+        core_dark = _rgb(color, 255)
 
-        # 1) 上まつ毛のメインアーチ（目頭 x=-0.92 から上ドームを通り、目尻 x=+0.92 まで包み込む）
+        # 1) 上まつ毛のメインアーチ（目頭側は細くすっきり抜き、中央から目尻へ品よく太くなる）
         ts = np.linspace(0.0, 1.0, 100)
         pts_top, pts_bot = [], []
         for t in ts:
             x = -0.92 + 1.84 * t
             u = 0.5 + 0.5 * x
-            w = max(0.0, 1.0 - (x / 0.90) ** 2)
-            y_base = 0.58 - 0.04 * x
-            y_arch = y_base - 0.50 * (w ** 0.46)
-            env = np.sin(np.pi * t) ** 0.42
-            th_up = (0.072 + 0.044 * (t ** 1.1)) * env + 0.008
-            th_dn = (0.062 + 0.068 * (t ** 1.5)) * env + 0.008
+            w = max(0.0, 1.0 - (x / 0.92) ** 2)
+            y_base = 0.57 - 0.035 * x
+            y_arch = y_base - 0.46 * (w ** 0.52)
+            env = (np.sin(np.pi * t) ** 0.55) * (0.42 + 0.58 * (t ** 0.7))
+            th_up = (0.048 + 0.038 * (t ** 1.1)) * env + 0.004
+            th_dn = (0.034 + 0.036 * (t ** 1.3)) * env + 0.004
             pts_top.append((u * n, (y_arch - th_up) * n))
             pts_bot.append((u * n, (y_arch + th_dn) * n))
 
-        d.polygon(pts_top + pts_bot[::-1], fill=warm_red)
+        d.polygon(pts_top + pts_bot[::-1], fill=edge_brown)
 
-        # 目尻の自然な垂れと包み（重たくならないすっきりしたアニメの目尻）
-        outer_hood = [
-            (0.80 * n, 0.24 * n),
-            (0.96 * n, 0.46 * n),
-            (0.91 * n, 0.54 * n),
-            (0.83 * n, 0.64 * n),
-            (0.77 * n, 0.66 * n),
-            (0.83 * n, 0.52 * n),
-            (0.79 * n, 0.34 * n),
+        # 目尻のキュートなハネと繊細なまつ毛スパイク
+        wing = [
+            (0.84 * n, 0.25 * n),
+            (0.98 * n, 0.30 * n),
+            (0.92 * n, 0.41 * n),
+            (0.86 * n, 0.47 * n),
+            (0.82 * n, 0.37 * n),
         ]
-        d.polygon(outer_hood, fill=warm_red)
+        d.polygon(wing, fill=edge_brown)
 
-        # 目頭・目尻の繊細なまつ毛スパイク
-        spikes = [
-            [(0.10 * n, 0.34 * n), (0.03 * n, 0.43 * n), (0.12 * n, 0.40 * n)],
-            [(0.08 * n, 0.42 * n), (0.02 * n, 0.51 * n), (0.10 * n, 0.48 * n)],
-            [(0.81 * n, 0.20 * n), (0.96 * n, 0.29 * n), (0.85 * n, 0.27 * n)],
-            [(0.85 * n, 0.28 * n), (0.98 * n, 0.37 * n), (0.88 * n, 0.35 * n)],
-        ]
-        for sp in spikes:
-            d.polygon(sp, fill=warm_red)
+        c_lo, c_hi = int(len(ts) * 0.10), int(len(ts) * 0.92)
+        d.polygon(pts_top[c_lo:c_hi] + pts_bot[c_lo:c_hi][::-1], fill=core_dark)
 
-        # 中央の黒いコア部分
-        c_lo, c_hi = int(len(ts) * 0.16), int(len(ts) * 0.82)
-        d.polygon(pts_top[c_lo:c_hi] + pts_bot[c_lo:c_hi][::-1], fill=core_black)
-
-        # 2) 二重まぶたの線（上まつ毛の少し上に沿う細い弧）
+        # 2) 二重まぶたの線（上まつ毛の上に沿う繊細なライン）
         crease_pts = []
-        for t in np.linspace(0.12, 0.70, 45):
+        for t in np.linspace(0.16, 0.76, 45):
             x = -0.92 + 1.84 * t
             u = 0.5 + 0.5 * x
-            w = max(0.0, 1.0 - (x / 0.90) ** 2)
-            y_c = max(0.015, (0.58 - 0.04 * x) - 0.50 * (w ** 0.46) - 0.092 * (np.sin(np.pi * t) ** 0.55))
+            w = max(0.0, 1.0 - (x / 0.92) ** 2)
+            y_c = max(0.015, (0.57 - 0.035 * x) - 0.46 * (w ** 0.52) - 0.076 * (np.sin(np.pi * t) ** 0.6))
             crease_pts.append((u * n, y_c * n))
-        d.line(crease_pts, fill=warm_red, width=max(2, int(n * 0.010)))
+        d.line(crease_pts, fill=_rgb((0.36, 0.22, 0.20), 195), width=max(2, int(n * 0.0075)))
 
-        # 3) 下まぶた中央の短いアイライン（KK_Eyeline_up 下部準拠）
+        # 3) 下まぶたの控えめなアイライン（目尻寄りに薄く添える）
         low_pts = []
-        for t in np.linspace(0.32, 0.66, 24):
+        for t in np.linspace(0.38, 0.78, 24):
             x = -0.92 + 1.84 * t
             u = 0.5 + 0.5 * x
-            w = max(0.0, 1.0 - (x / 0.90) ** 2)
-            y_l = (0.58 - 0.04 * x) + 0.31 * (w ** 0.72)
+            w = max(0.0, 1.0 - (x / 0.92) ** 2)
+            y_l = (0.57 - 0.035 * x) + 0.33 * (w ** 0.72)
             low_pts.append((u * n, y_l * n))
-        d.line(low_pts, fill=warm_red, width=max(3, int(n * 0.014)))
+        d.line(low_pts, fill=_rgb((0.38, 0.24, 0.22), 165), width=max(2, int(n * 0.0085)))
 
         return self.save(img.resize((256, 256), Image.LANCZOS), name)
 
@@ -231,63 +221,60 @@ class TextureSet:
         return self.save(img.resize((256, 64), Image.LANCZOS), name)
 
     def nose(self, name="nose.png", skin_color=(1.0, 0.86, 0.76)):
-        """既製アニメモデル（KK_Nose）・立ち絵準拠の控えめで繊細な鼻先チョン点＋淡い立体影。"""
+        """既製MMDモデル準拠の控えめで可愛らしい鼻先ハイライト＆淡い立体影点。"""
         n = 128 * S
         img = Image.new("RGBA", (n, n), (0, 0, 0, 0))
         d = ImageDraw.Draw(img)
         sc = np.asarray(skin_color, float)
-        # 鼻先の下のほんのり淡い立体影
-        shade_col = _rgb(sc * np.array([0.82, 0.68, 0.64]), 70)
-        d.ellipse([n * 0.36, n * 0.52, n * 0.64, n * 0.82], fill=shade_col)
+        # 鼻先の下のほんのり淡いピーチ影
+        shade_col = _rgb(sc * np.array([0.85, 0.70, 0.66]), 60)
+        d.ellipse([n * 0.38, n * 0.54, n * 0.62, n * 0.80], fill=shade_col)
         img = img.filter(ImageFilter.GaussianBlur(n * 0.05))
         d = ImageDraw.Draw(img)
-        # 鼻先の小さなチョン点（主張しすぎない暖色ブラウン）
-        line_col = _rgb(sc * np.array([0.46, 0.28, 0.25]), 185)
+        # 鼻先の小さなチョン点（濃すぎない柔らかい暖色ブラウン）
+        line_col = _rgb(sc * np.array([0.52, 0.34, 0.30]), 165)
         stroke = [
-            (n * 0.48, n * 0.46),
+            (n * 0.48, n * 0.47),
             (n * 0.52, n * 0.50),
-            (n * 0.52, n * 0.68),
-            (n * 0.49, n * 0.76),
-            (n * 0.47, n * 0.66),
+            (n * 0.52, n * 0.66),
+            (n * 0.49, n * 0.73),
+            (n * 0.47, n * 0.64),
         ]
         d.polygon(stroke, fill=line_col)
         return self.save(img.resize((128, 128), Image.LANCZOS), name)
 
-    def blush(self, name="blush.png", color=(1.0, 0.44, 0.48)):
-        """ふんわりぼかしたチーク＋小さな白いハイライト点（KK_Face_light 準拠）。"""
+    def blush(self, name="blush.png", color=(1.0, 0.46, 0.50)):
+        """ふんわりぼかしたピーチピンクのチーク。"""
         w, h = 256, 128
         y, x = np.mgrid[0:h, 0:w] / np.array([h - 1, w - 1])[:, None, None] * 2 - 1
         r2 = x * x + (y * 1.15) ** 2
-        a = np.clip(1.0 - r2, 0.0, 1.0) ** 2.0 * 0.30
+        a = np.clip(1.0 - r2, 0.0, 1.0) ** 2.2 * 0.24
         col = np.broadcast_to(np.asarray(color, float), (h, w, 3)).copy()
-        hl = np.exp(-(((x + 0.18) / 0.09) ** 2 + ((y + 0.24) / 0.13) ** 2))
-        col = col * (1 - hl[..., None]) + np.ones((h, w, 3)) * hl[..., None]
-        a = np.maximum(a, hl * 0.70)
         arr = np.dstack([np.clip(col, 0, 1), np.clip(a, 0, 1)])
         return self.save(Image.fromarray((arr * 255).astype(np.uint8), "RGBA"), name)
 
-    def mouth_line(self, name="mouth_line.png", color=(0.32, 0.14, 0.14)):
-        """既製アニメモデル（models/tabane_roze_n4d/）・立ち絵準拠の繊細で上品な美少女のリップライン。"""
+    def mouth_line(self, name="mouth_line.png", color=(0.48, 0.22, 0.22)):
+        """既製MMDモデル準拠の優しく微笑む可愛らしいリップライン（口角がほんのり上がり、唇に淡い血色ティントが乗る）。"""
         w, h = 256 * S, 128 * S
         img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
         lip_tint = Image.new("RGBA", (w, h), (0, 0, 0, 0))
         dt = ImageDraw.Draw(lip_tint)
-        dt.ellipse([w * 0.32, h * 0.52, w * 0.68, h * 0.72], fill=_rgb((0.94, 0.62, 0.60), 55))
-        lip_tint = lip_tint.filter(ImageFilter.GaussianBlur(h * 0.045))
+        dt.ellipse([w * 0.30, h * 0.48, w * 0.70, h * 0.72], fill=_rgb((0.96, 0.64, 0.62), 55))
+        lip_tint = lip_tint.filter(ImageFilter.GaussianBlur(h * 0.05))
         img = Image.alpha_composite(img, lip_tint)
         d = ImageDraw.Draw(img)
 
         pts_top, pts_bot = [], []
         for t in np.linspace(0, 1, 60):
-            u = 0.05 + 0.90 * t
+            u = 0.06 + 0.88 * t
             x = (t - 0.5) * 2.0
-            # 美少女モデル準拠のほぼ水平で口角だけわずかに上がる繊細なライン
-            y = 0.52 - 0.055 * (x ** 2)
-            env = np.sin(np.pi * t) ** 0.50
-            th = (0.064 + 0.018 * np.exp(-((x / 0.30) ** 2))) * env
+            # 口角がキュッと優しく上がる美少女の微笑みアーチ
+            y = 0.55 - 0.11 * (x ** 2) + 0.02 * np.cos(np.pi * x)
+            env = np.sin(np.pi * t) ** 0.55
+            th = (0.058 + 0.016 * np.exp(-((x / 0.35) ** 2))) * env
             pts_top.append((u * w, (y - th * 0.48) * h))
             pts_bot.append((u * w, (y + th * 0.52) * h))
-        d.polygon(pts_top + pts_bot[::-1], fill=_rgb(color, 245))
+        d.polygon(pts_top + pts_bot[::-1], fill=_rgb(color, 235))
         return self.save(img.resize((256, 128), Image.LANCZOS), name)
 
     def mouth_interior(self, name="mouth_in.png", fang=False):
