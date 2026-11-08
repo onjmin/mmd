@@ -156,3 +156,32 @@ class TextureSet:
         if pattern is not None:
             col = pattern(u, v, col)
         return self.save(Image.fromarray((np.clip(col, 0, 1) * 255).astype(np.uint8), "RGB"), name)
+
+    # ---- 模様と印 ----
+    def meander(self, name, bg, fg, tiles=1):
+        """横に続く雷文（四角い渦）の帯。横方向にくり返して貼る。"""
+        w, h = 64 * S, 64 * S
+        img = Image.new("RGB", (w, h), _rgb(bg)[:3])
+        d = ImageDraw.Draw(img)
+        lw = max(1, int(h * 0.07))
+        g = h / 8  # 1 マスの大きさ
+        pts = [(0, 6), (6, 6), (6, 1), (1, 1), (1, 4), (4, 4), (4, 3), (3, 3)]
+        d.line([(x * g, y * g) for x, y in pts], fill=_rgb(fg)[:3], width=lw, joint="curve")
+        d.line([(6 * g, 6 * g), (8 * g, 6 * g)], fill=_rgb(fg)[:3], width=lw)
+        for y in (0.4, 7.6):  # 上下の細い線
+            d.line([(0, y * g), (w, y * g)], fill=_rgb(fg)[:3], width=max(1, lw // 2))
+        return self.save(img.resize((64, 64), Image.LANCZOS), name)
+
+    def mark(self, name, text, color, font="arialbd.ttf"):
+        """肩などに入れる文字の印（背景は透明）。"""
+        from PIL import ImageFont
+        w, h = 128 * S, 64 * S
+        img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        d = ImageDraw.Draw(img)
+        try:
+            f = ImageFont.truetype(font, int(h * 0.8))
+        except OSError:
+            f = ImageFont.load_default()
+        box = d.textbbox((0, 0), text, font=f)
+        d.text(((w - box[2] - box[0]) / 2, (h - box[3] - box[1]) / 2), text, font=f, fill=_rgb(color))
+        return self.save(img.resize((128, 64), Image.LANCZOS), name)

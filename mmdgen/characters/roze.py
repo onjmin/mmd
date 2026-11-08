@@ -5,7 +5,7 @@ import numpy as np
 from ..body import Character, Head, SIDES, finish, joints
 from ..builder import Model
 from ..textures import TextureSet
-from ..geom import catmull, ellipsoid, loft, ring, torus, tube, TAU
+from ..geom import MeshData, catmull, ellipsoid, loft, ring, torus, tube, TAU
 from .. import parts
 
 BLACK = (0.15, 0.14, 0.17)
@@ -27,6 +27,9 @@ def build(out_dir):
     m.material("pink_d", "炎", PINK, double=True, toon=0)
     m.material("pale_d", "炎の先", PALE_PINK, double=True, toon=0)
     m.material("white", "白", (0.96, 0.95, 0.93), toon=0)
+    m.material("meander", "腰布の雷文", RED, double=True, tex=c.tex.meander("meander.png", RED, (0.97, 0.95, 0.92)))
+    m.material("oj", "肩のOJ", RED, edge=False, shadow=False, tex=c.tex.mark("oj.png", "OJ", (0.80, 0.12, 0.15)),
+               toon_tex=c.tex.toon("toon_flat.png", (1, 1, 1)))
     m.material("sleeve", "袖", BLACK, double=True, toon=0)
     c.hair_material("hair", "髪", HAIR)
     c.hair_material("teal", "髪（内側）", TEAL)
@@ -58,19 +61,39 @@ def build(out_dir):
         leg = c.skin_leg(jp)
         a0, a1 = (-1.75, 1.75) if s > 0 else (np.pi - 1.75, np.pi + 1.75)
         radius = lambda y: 0.064 + 0.040 * (0.57 - y) / 0.57  # 裾へ向けて広がる
-        for y0, y1, mat, steps in [(0.570, 0.150, "red_d", 10), (0.150, 0.138, "white", 2),
-                                   (0.138, 0.070, "pink_d", 4), (0.070, 0.004, "pale_d", 4)]:
+        for y0, y1, mat, steps in [(0.570, 0.200, "red_d", 9), (0.200, 0.150, "meander", 2),
+                                   (0.150, 0.070, "pink_d", 4), (0.070, 0.004, "pale_d", 4)]:
             jag = (lambda a: 0.035 * np.abs(np.sin(a * 4.0))) if mat == "pale_d" else None
             grow = lambda t, y0=y0, y1=y1: radius(y0 + (y1 - y0) * t) / parts.leg_at(y0 + (y1 - y0) * t, s)[0]
-            m.add(mat, parts.leg_tube(s, y0, y1, grow, steps=steps, n=26, a0=a0, a1=a1, jag=jag), leg)
+            mesh = parts.leg_tube(s, y0, y1, grow, steps=steps, n=26, a0=a0, a1=a1, jag=jag)
+            # 雷文は 1 マスが帯の高さと同じくらいになるよう横にくり返す
+            m.add(mat, mesh, leg, uv=mesh.uv * [7.0, 1.0] if mat == "meander" else None)
         m.add("black", parts.foot(s, r=(0.024, 0.022, 0.058)), m.skin_fixed(jp + "足首"))
-        # 肩の「OJ」の代わりに赤い印
-        m.add("red", ellipsoid(joints(s)["腕"] + np.array([s * 0.020, -0.03, -0.012]), [0.004, 0.009, 0.004]),
-              arm)
+    # 左の二の腕の「OJ」
+    m.add("oj", shoulder_mark(1.0), c.skin_arm("左"))
 
     hair(c)
     finish(m)
     return m
+
+
+def shoulder_mark(s, t=0.045, w=0.014, h=0.008, r=0.0275):
+    """二の腕の前寄り外側に貼る、文字の向きが正面から読める板。"""
+    d = parts.arm_point(s, 1.0) - parts.arm_point(s, 0.0)
+    d /= np.linalg.norm(d)
+    n = np.array([s * 0.6, 0.0, -1.0])
+    n -= (n @ d) * d
+    n /= np.linalg.norm(n)
+    hx = np.array([1.0, 0, 0]) - n[0] * n
+    hx /= np.linalg.norm(hx)
+    vy = np.cross(hx, n)
+    p = parts.arm_point(s, t) + n * r
+    verts = np.array([p + hx * a + vy * b for b in (h, -h) for a in (-w, w)])
+    uv = np.array([[0, 0], [1, 0], [0, 1], [1, 1]], float)
+    faces = np.array([[0, 1, 2], [1, 3, 2]])
+    if np.cross(verts[1] - verts[0], verts[2] - verts[0]) @ n < 0:
+        faces = faces[:, ::-1]
+    return MeshData(verts, faces, uv)
 
 
 def hair(c):
