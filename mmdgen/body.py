@@ -278,11 +278,29 @@ class Character:
                                 {"左足": 1.7, "右足": 1.7, "下半身": 1.1})
 
     def skin_leg(self, jp):
-        return self.m.skin_auto(["下半身", jp + "足", jp + "ひざ", jp + "足首"], {"下半身": 1.5})
+        return self.smooth_joints(self.m.skin_auto(["下半身", jp + "足", jp + "ひざ", jp + "足首"], {"下半身": 1.5}),
+                                  [(jp + "足", jp + "ひざ", 0.040), (jp + "ひざ", jp + "足首", 0.025)])
 
     def skin_arm(self, jp):
-        return self.m.skin_auto(["上半身2", jp + "肩", jp + "腕", jp + "ひじ", jp + "手首"],
-                                {"上半身2": 1.4, jp + "肩": 1.3})
+        return self.smooth_joints(self.m.skin_auto(["上半身2", jp + "肩", jp + "腕", jp + "ひじ", jp + "手首"],
+                                                   {"上半身2": 1.4, jp + "肩": 1.3}),
+                                  [(jp + "腕", jp + "ひじ", 0.030), (jp + "ひじ", jp + "手首", 0.020)])
+
+    def smooth_joints(self, f, pairs):
+        """ひじ・ひざのまわりは、親の骨の向きに沿って幅 width のあいだで親→子へ線形に移す。
+        距離だけで振り分けると関節で重みが急に切り替わり、曲げたとき外側がとがって内側がつぶれる。"""
+        m = self.m
+
+        def g(p):
+            out = f(p)
+            for par, ch, width in pairs:
+                a, e = m.seg[par]
+                d = (p - e) @ ((e - a) / np.linalg.norm(e - a))
+                for i in np.nonzero(np.abs(d) < width)[0]:
+                    if out[i][0] in (par, ch):
+                        out[i] = (ch, par, float(np.clip(0.5 + d[i] / (2 * width), 0, 1)))
+            return out
+        return g
 
     def skin_hair(self):
         return self.m.skin_vertical("頭", "上半身2", 0.80, 0.70)

@@ -6,7 +6,7 @@ from ..body import ARM_ANGLE, Character, Head, SIDES, finish, joints
 from ..builder import Model
 from ..textures import TextureSet
 from ..geom import MeshData, catmull, ellipsoid, loft, ring, torus, tube, TAU
-from .. import parts
+from .. import parts, physics
 
 BLACK = (0.15, 0.14, 0.17)
 RED = (0.78, 0.14, 0.17)
@@ -72,11 +72,23 @@ def build(out_dir):
         m.add("sleeve", sleeve, arm)
         m.add("red", cuff, arm)
         m.add("red", parts.arm_torus(s, 0.085, 0.0185, 0.0035), arm)
-        # 腰布：腰の横から垂れて脚の外〜後ろを覆い（前は開く）、裾が炎になる
-        leg = c.skin_leg(jp)
+        # 腰布：腰の横から垂れて脚の外〜後ろを覆い（前は開く）、裾が炎になる。
+        # 長い布なので脚には付けず、腰から下げた物理の布にする（走ると後ろへなびき、上げた脚に押されてめくれる）
         mid = 0.50 if s > 0 else np.pi - 0.50  # 0 が外側、π/2 が後ろ
         a0, a1 = mid - 1.60, mid + 1.60
         radius = lambda y: 0.066 + 0.100 * ((0.57 - y) / 0.57) ** 1.3  # 裾へ向けて広がる
+
+        def surface(a, y, s=s):
+            r, c0 = parts.leg_at(y, s)
+            return c0 + radius(y) * np.array([np.cos(a), 0.0, np.sin(a)])
+
+        def param(p, s=s, a0=a0):
+            cs = np.array([parts.leg_at(y, s)[1] for y in p[:, 1]])
+            a = np.arctan2(p[:, 2] - cs[:, 2], p[:, 0] - cs[:, 0])
+            return a0 + np.mod(a - a0, 2 * np.pi), p[:, 1]
+
+        leg = physics.cloth(c, f"腰布{jp}", surface, np.linspace(a0, a1, 7), [0.570, 0.460, 0.350, 0.240, 0.130, 0.020],
+                            "下半身", closed=False, lim=0.5, root_lim=1.4, rscale=0.40)(param)
         for y0, y1, mat, steps in [(0.570, 0.200, "red_d", 9), (0.200, 0.150, "meander", 2),
                                    (0.150, 0.004, "flame", 7)]:
             jag = (lambda a: 0.040 * np.abs(np.sin(a * 5.0)) ** 1.5) if mat == "flame" else None

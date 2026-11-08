@@ -235,7 +235,9 @@ class Model:
         for j in self.joints:
             j.pos = tuple(np.asarray(j.pos) * s)
         out.rigids, out.joints = self.rigids, self.joints
-        out.weights = [(self.bone[a], self.bone[b] if b else -1, w) for a, b, w in self.weights]
+        # 重みは (骨a, 骨b, aの重み) の 2 本か、[(骨, 重み), ...] の 4 本まで（布を縦横になめらかに混ぜるとき）
+        out.weights = [[(self.bone[b], wi) for b, wi in w] if isinstance(w, list)
+                       else (self.bone[w[0]], self.bone[w[1]] if w[1] else -1, w[2]) for w in self.weights]
         out.materials = self.materials
         for b in self.bones:
             b.pos = tuple(np.asarray(b.pos) * s)

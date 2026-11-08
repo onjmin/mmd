@@ -34,6 +34,16 @@
   </div>
   <div>
     <button id="pose">ポーズ確認</button>
+  </div>
+  <div>
+    <button data-motion="walk">歩く</button>
+    <button data-motion="run">走る</button>
+    <button data-motion="jump">ジャンプ</button>
+    <button data-motion="dance">ダンス</button>
+    <button data-motion="">止める</button>
+    <label>速さ <input type="range" id="speed" min="0.1" max="1.5" step="0.05" value="1"></label>
+  </div>
+  <div>
     <button id="front">正面</button>
     <button id="side">横</button>
     <button id="back">後ろ</button>
@@ -113,8 +123,10 @@ function load(name) {
       l.querySelector("input").oninput = (e) => { m.morphTargetInfluences[i] = +e.target.value; };
       box.appendChild(l);
     });
+    rest = { center: bone("センター").position.clone(), h: new THREE.Box3().setFromObject(m).max.y };
     view("front");
     if (compare) setupCompare(name);
+    if (motion && Q.get("at") !== null) seek(+Q.get("at"));
   }, undefined, (e) => console.error(e));
 }
 
@@ -169,17 +181,148 @@ function pose(t) {
   set("両目", 0, 0.3 * s, 0);
 }
 
+// ---- 動きの確認：歩く・走る・ジャンプ・ダンス（?motion=walk&at=秒 で、その瞬間で止めて写す）----
+// 骨には向きがないので、回転軸はワールドの軸（three.js では前が +Z、左が +X）。
+// 腕：Z で上げ下げ、X で前後（負で前）。ひじ：腕の向き×Z の軸で正が前へ曲がる。脚：X で前後（負で前）、ひざは正で後ろへ曲がる。
+const X = new THREE.Vector3(1, 0, 0), Y = new THREE.Vector3(0, 1, 0), Z = new THREE.Vector3(0, 0, 1);
+const ARM = 37 * Math.PI / 180;
+let motion = Q.get("motion") || "", rest = null, frozen = false;
+function rot(n, ...steps) {  // steps = [[軸, 角], ...] を順に（先に書いたものが先に効く）
+  const b = bone(n); if (!b) return;
+  b.quaternion.identity();
+  for (const [a, ang] of steps) b.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(a, ang));
+}
+const armDir = (sd) => new THREE.Vector3(sd * Math.cos(ARM), -Math.sin(ARM), 0);
+function arm(side, down, fwd, out = 0, bend = 0) {
+  const sd = side === "左" ? 1 : -1;
+  rot(side + "腕", [Z, -sd * down], [X, -fwd], [Y, sd * out]);
+  rot(side + "ひじ", [armDir(sd).cross(Z).normalize(), bend]);
+}
+function leg(side, fwd, knee, ankle = 0, out = 0) {
+  rot(side + "足", [X, -fwd], [Z, (side === "左" ? 1 : -1) * out]);
+  rot(side + "ひざ", [X, knee]);
+  rot(side + "足首", [X, ankle]);
+}
+const ease = (x) => x * x * (3 - 2 * x), clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const seg = (t, a, b) => ease(clamp((t - a) / (b - a), 0, 1));  // a..b で 0→1
+function center(dy, dz = 0) {
+  const b = bone("センター");
+  b.position.set(rest.center.x, rest.center.y + dy * rest.h, rest.center.z + dz * rest.h);
+}
+const MOTIONS = {
+  walk(t) {
+    const p = t / 1.1 * 2 * Math.PI, sw = Math.sin(p), c = Math.cos(p);
+    leg("左", 0.45 * sw, 0.08 + 0.75 * Math.max(0, c) ** 1.5, -0.10 * sw);
+    leg("右", -0.45 * sw, 0.08 + 0.75 * Math.max(0, -c) ** 1.5, 0.10 * sw);
+    arm("左", 0.78, -0.32 * sw, 0, 0.25 + 0.15 * Math.max(0, -sw));
+    arm("右", 0.78, 0.32 * sw, 0, 0.25 + 0.15 * Math.max(0, sw));
+    rot("上半身", [Y, 0.10 * sw]); rot("下半身", [Y, -0.12 * sw]);
+    center(-0.022 + 0.010 * Math.abs(Math.sin(p)));
+  },
+  run(t) {
+    const p = t / 0.70 * 2 * Math.PI, sw = Math.sin(p), c = Math.cos(p);
+    leg("左", 0.25 + 0.75 * sw, 0.35 + 1.55 * Math.max(0, c) ** 1.2, -0.25 * sw);
+    leg("右", 0.25 - 0.75 * sw, 0.35 + 1.55 * Math.max(0, -c) ** 1.2, 0.25 * sw);
+    arm("左", 0.68, -0.75 * sw, 0, 1.45);
+    arm("右", 0.68, 0.75 * sw, 0, 1.45);
+    rot("上半身", [X, 0.22], [Y, 0.20 * sw]); rot("下半身", [X, -0.08], [Y, -0.18 * sw]);
+    rot("頭", [X, -0.12]);
+    center(-0.035 + 0.030 * Math.abs(Math.sin(p)));
+  },
+  jump(t) {
+    t = t % 1.8;
+    const crouch = seg(t, 0.0, 0.30) * (1 - seg(t, 0.30, 0.42)) + seg(t, 0.95, 1.08) * (1 - seg(t, 1.20, 1.50));
+    const air = t > 0.38 && t < 1.00 ? Math.sin(Math.PI * (t - 0.38) / 0.62) : 0;
+    const tuck = air * (t < 0.69 ? 1 : 0.6);
+    for (const sd of ["左", "右"])
+      leg(sd, 0.75 * crouch + 0.9 * tuck, 1.5 * crouch + 1.7 * tuck, -0.75 * crouch - 0.6 * tuck + 0.3 * air);
+    const up = seg(t, 0.30, 0.50) * (1 - seg(t, 0.90, 1.15));
+    for (const sd of ["左", "右"]) arm(sd, 0.78 - 2.1 * up - 0.2 * crouch, -0.8 * crouch, 0, 0.3);
+    rot("上半身", [X, 0.35 * crouch - 0.10 * air]);
+    center(-0.20 * crouch - 0.12 * tuck + 0.28 * air);
+  },
+  dance(t) {
+    t = t % 8.0;
+    const b = Math.sin(t / 0.5 * Math.PI);  // 拍
+    const A = (a, z) => seg(t, a, a + 0.3) * (1 - seg(t, z - 0.3, z));  // 区間 a..z の重み
+    const wave = A(0, 2), sway = A(2, 4), kick = A(4, 6), spin = A(6, 8);
+    // 1) 両手を頭の上で振る  2) 腰を左右に振って手を胸の前  3) 左右に足を高く上げる  4) 回りながら片手を上げる
+    const kl = kick * Math.max(0, Math.sin(t * Math.PI)), kr = kick * Math.max(0, -Math.sin(t * Math.PI));
+    leg("左", 1.35 * kl + 0.15 * sway * b, 0.25 * kl + 0.25 * sway * Math.max(0, b), 0.2 * kl, 0.10 * sway);
+    leg("右", 1.35 * kr - 0.15 * sway * b, 0.25 * kr + 0.25 * sway * Math.max(0, -b), 0.2 * kr, 0.10 * sway);
+    arm("左", 0.78 - 2.30 * wave - 0.9 * spin - 0.1 * kick, 0.9 * sway + 0.2 * wave * b, 0.4 * wave * b, 0.3 + 1.5 * sway + 0.4 * wave);
+    arm("右", 0.78 - 2.30 * wave + 0.2 * spin - 0.1 * kick, 0.9 * sway - 0.2 * wave * b, -0.4 * wave * b, 0.3 + 1.5 * sway + 0.4 * wave + 0.8 * spin);
+    rot("下半身", [Z, 0.22 * sway * b], [Y, 0.15 * sway * b]);
+    rot("上半身", [Z, -0.15 * sway * b + 0.10 * wave * b], [X, -0.10 * kick], [Y, 0.25 * spin * Math.sin(t * 3)]);
+    rot("頭", [Z, 0.15 * b * (wave + sway)], [X, 0.08 * kick]);
+    rot("全ての親", [Y, spin * (t - 6) * Math.PI]);
+    center(-0.012 - 0.012 * Math.abs(b) - 0.06 * kick * Math.max(kl, kr));
+  },
+};
+function setMotion(m) {
+  motion = m; t = 0; frozen = false; posing = false;
+  if (!mesh) return;
+  mesh.skeleton.pose();
+  if (rest) center(0);
+  if (physics) physics.reset();
+}
+// 0 秒から at 秒まで 1/60 刻みで動きと物理を進めて止める（スクリーンショットが毎回同じ形になる）
+function seek(at) {
+  setMotion(motion);
+  for (let k = 0, n = Math.round(at * 60); k <= n; k++) {
+    t = k / 60; MOTIONS[motion](t); mesh.updateMatrixWorld(true);
+    if (physics && document.getElementById("physics").checked) physics.update(1 / 60);
+  }
+  frozen = true;
+}
+window.seek = seek; window.setMotion = setMotion;
+
 document.querySelectorAll("[data-model]").forEach((b) => b.onclick = () => load(b.dataset.model));
-document.getElementById("pose").onclick = () => { posing = !posing; if (!posing) mesh.skeleton.pose(); };
+document.getElementById("pose").onclick = () => { setMotion(""); posing = !posing; if (!posing) mesh.skeleton.pose(); };
+document.querySelectorAll("[data-motion]").forEach((b) => b.onclick = () => setMotion(b.dataset.motion));
 ["front", "side", "back", "face"].forEach((n) => document.getElementById(n).onclick = () => view(n));
 window.view = view; window.load = load; window.camera = camera; window.controls = controls; window.pose = pose; window.setPosing = (v) => posing = v;
+window.render = () => effect.render(scene, camera); window.renderer = renderer;
+// 確認用：sheet([[動き, 秒, 向き(度), 注視点の高さ(身長比)か骨の名前, 写す高さ(身長比), 見下ろし(度)], ...], 列, 隠す材質の正規表現)
+// で、いくつもの瞬間・向きを 1 枚に並べて画面に重ねる（クリックで消える）
+window.sheet = (cells, cols = 3, hide = null, cw = 400, ch = 400) => {
+  const out = document.createElement("canvas");
+  out.width = cw * cols; out.height = ch * Math.ceil(cells.length / cols);
+  const g = out.getContext("2d");
+  document.getElementById("sheet")?.remove();
+  setMotion("");
+  const h = rest.h;
+  mesh.material.forEach((m) => m.visible = !(hide && hide.test(m.name)));
+  cells.forEach(([mo, at, yaw, cy, span, pitch = 0], k) => {
+    setMotion(mo); if (mo) seek(at);
+    // 注視点は高さ（身長比）か、骨の名前（動いた後のその骨の位置）
+    mesh.updateMatrixWorld(true);
+    const tgt = typeof cy === "string" ? bone(cy).getWorldPosition(new THREE.Vector3()) : new THREE.Vector3(0, h * cy, 0);
+    const d = span * h / 2 / Math.tan(camera.fov * Math.PI / 360);
+    const a = yaw * Math.PI / 180, p = pitch * Math.PI / 180;
+    camera.position.set(tgt.x + d * Math.sin(a) * Math.cos(p), tgt.y + d * Math.sin(p), tgt.z + d * Math.cos(a) * Math.cos(p));
+    controls.target.copy(tgt); controls.update();
+    effect.render(scene, camera);
+    const c = renderer.domElement, s = Math.min(c.width / cw, c.height / ch);
+    const x = (k % cols) * cw, y = Math.floor(k / cols) * ch;
+    g.drawImage(c, (c.width - cw * s) / 2, (c.height - ch * s) / 2, cw * s, ch * s, x, y, cw, ch);
+    g.strokeStyle = "#999"; g.strokeRect(x, y, cw, ch);
+    g.fillStyle = "#000"; g.font = "18px sans-serif"; g.fillText(`${mo} ${at}s ${yaw}°`, x + 6, y + 20);
+  });
+  mesh.material.forEach((m) => m.visible = true);
+  const img = document.createElement("img"); img.id = "sheet"; img.onclick = () => img.remove();
+  img.style.cssText = "position:fixed;inset:0;width:100vw;height:100vh;object-fit:contain;background:#fff;z-index:99";
+  img.src = out.toDataURL(); document.body.appendChild(img);
+  return cells.length;
+};
 
 const clock = new THREE.Clock();
 renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), 1 / 20);
-  t += dt;
+  if (!frozen) t += dt * (motion ? +document.getElementById("speed").value : 1);
   if (posing) pose(t);
-  if (physics && document.getElementById("physics").checked) { mesh.updateMatrixWorld(true); physics.update(dt); }
+  else if (motion && rest && !frozen) MOTIONS[motion](t);
+  if (physics && !frozen && document.getElementById("physics").checked) { mesh.updateMatrixWorld(true); physics.update(dt); }
   effect.render(scene, camera);
 });
 addEventListener("resize", () => {

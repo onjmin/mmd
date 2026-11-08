@@ -34,6 +34,13 @@ def write_pmx(path, m):
     out += struct.pack("<i", nv)
     for p, n, uv, w in zip(m.positions, m.normals, m.uvs, m.weights):
         out += struct.pack("<8f", p[0], p[1], p[2], n[0], n[1], n[2], uv[0], uv[1])
+        if isinstance(w, list):  # BDEF4
+            w = sorted(w, key=lambda x: -x[1])[:4]
+            tot = sum(x[1] for x in w)
+            w = [(b, x / tot) for b, x in w] + [(0, 0.0)] * (4 - len(w))
+            out += struct.pack("<B4h4f", 2, *[b for b, _ in w], *[x for _, x in w])
+            out += struct.pack("<f", 1.0)
+            continue
         b1, b2, w1 = w
         if b2 < 0 or w1 >= 0.999:
             out += struct.pack("<Bh", 0, b1)
