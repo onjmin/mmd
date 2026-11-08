@@ -35,7 +35,7 @@ def build(out_dir):
     m.material("jade", "髪飾り（緑）", (0.40, 0.80, 0.62), toon=0)
 
     c.build_body(torso_bands=[(1.0, "black"), (0.655, "skin"), (0.566, "black")],
-                 leg_bands=[(1.0, "skin")], arm_bands=[(-1.0, "skin")], neck_mat="black")
+                 leg_bands=[(1.0, "black"), (0.522, "skin")], arm_bands=[(-1.0, "skin")], neck_mat="black")
     c.build_face()
 
     torso = c.skin_torso()
@@ -51,8 +51,8 @@ def build(out_dir):
     for jp, en, s in SIDES:
         arm = c.skin_arm(jp)
         # 大きな袖（肩は出す）
-        m.add("sleeve", parts.sleeve(s, 0.055, 0.30, [0.033, 0.042, 0.055, 0.068, 0.078, 0.082]), arm)
-        m.add("red", parts.sleeve(s, 0.30, 0.335, [0.083, 0.084, 0.082], n=20), arm)
+        m.add("sleeve", parts.sleeve(s, 0.055, 0.30, [0.034, 0.050, 0.070, 0.088, 0.100, 0.104]), arm)
+        m.add("red", parts.sleeve(s, 0.30, 0.345, [0.105, 0.106, 0.103], n=20), arm)
         m.add("red", parts.arm_torus(s, 0.058, 0.034, 0.004), arm)
         # 腰布：脚の外側を覆い、裾が炎になる
         leg = c.skin_leg(jp)
@@ -81,15 +81,15 @@ def hair(c):
         side = abs(th) > 0.62
         c.bang("hair", th, -0.55 if side else 0.20, 0.019, e_start=1.25, pointy=False,
                lift_end=1.12 if side else 1.08)
-    # サイドの姫毛と、その奥の緑
+    # サイドの姫毛（胸まで）と、その奥の緑（へそのあたりまで）
     for sg in (1, -1):
-        for th, y_end, mat_low in [(1.08, 0.66, "hair"), (1.30, 0.60, "teal"), (1.50, 0.56, "teal")]:
+        for th, y_end, mat_low in [(1.08, 0.70, "hair"), (1.30, 0.64, "teal"), (1.50, 0.62, "teal")]:
             c.drape("hair", sg * th, y_end, 0.020, pointy=False, flare=0.06, bones=3,
                     mats_fn=lambda p, ml=mat_low: ml if p[1] < 0.79 else "hair")
-    # 後ろ髪（腰まで）
+    # 後ろ髪（肩甲骨くらいまで）
     for th in np.linspace(1.70, np.pi, 7):
         for sg in ((1, -1) if th < np.pi - 1e-3 else (1,)):
-            c.drape("hair", sg * th, 0.50, 0.034, flare=0.10, pointy=False, bones=4)
+            c.drape("hair", sg * th, 0.68, 0.034, flare=0.06, pointy=False, bones=3)
     # 頭の両側の小さな結い髪と陰陽玉の髪飾り
     hc, hr = c.hair_surface()
     for sg in (1, -1):
