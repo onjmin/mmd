@@ -3,7 +3,8 @@
 import numpy as np
 
 from . import pmx
-from .geom import (UP, MeshData, catmull, ellipsoid, loft, norm, ring, rot_axes, smoothstep, tube, TAU)
+from .builder import _merge_seams
+from .geom import (UP, MeshData, catmull, ellipsoid, loft, norm, ring, rot_axes, smoothstep, tube, vertex_normals, TAU)
 
 ARM_ANGLE = np.radians(37)
 SIDES = (("左", "L", 1.0), ("右", "R", -1.0))
@@ -210,17 +211,17 @@ def ear(c, n, up, back, a=0.0090, b=0.0155, K=11, J=44):
 
 # 頭の形：あご先 0〜頭頂 1 の高さごとの水平断面。既製アニメモデル（models/tabane_roze_n4d/）の頭を
 # 輪切りにして実測し、頭の高さを 1 として正規化した値。半幅・前（鼻を除いた頬の前面）・後ろ・鼻と唇の出っ張り。
-# あご先〜エラ（高さ 0.00〜0.28）はすっきりしたV字ラインに絞り、頬骨〜目元で自然な丸みを持たせる。
+# あご先（h=0.00〜0.20）は2階差分が常に負になる滑らかな凸曲線にして直線的な逆三角あごを防ぎ、美少女らしい柔らかな頬〜あごラインにする。
 HEAD_H = [0.00, 0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45, 0.50,
           0.55, 0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90, 0.95, 1.00]
-HEAD_W = [0.048, 0.125, 0.188, 0.242, 0.292, 0.336, 0.370, 0.394, 0.406, 0.412, 0.416,
-          0.420, 0.418, 0.416, 0.410, 0.398, 0.373, 0.344, 0.307, 0.243, 0.150]
+HEAD_W = [0.065, 0.178, 0.254, 0.308, 0.350, 0.380, 0.398, 0.408, 0.414, 0.418, 0.420,
+          0.420, 0.418, 0.415, 0.408, 0.396, 0.372, 0.344, 0.307, 0.243, 0.150]
 HEAD_F = [0.318, 0.346, 0.372, 0.388, 0.395, 0.390, 0.386, 0.395, 0.405, 0.415, 0.436,
           0.447, 0.447, 0.440, 0.437, 0.417, 0.414, 0.390, 0.329, 0.260, 0.145]
 HEAD_B = [0.09, 0.16, 0.236, 0.293, 0.347, 0.377, 0.399, 0.426, 0.442, 0.45, 0.455,
           0.455, 0.451, 0.448, 0.437, 0.425, 0.402, 0.368, 0.322, 0.254, 0.14]
-HEAD_NOSE = [0.006, 0.007, 0.012, 0.018, 0.040, 0.048, 0.035, 0.027, 0.018, 0.014, 0.008,
-             0.003, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+HEAD_NOSE = [0.004, 0.006, 0.012, 0.024, 0.046, 0.044, 0.028, 0.018, 0.012, 0.008, 0.004,
+             0.001, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
 # あご〜頬〜こめかみの輪郭に折れ目が出ないよう、Catmull-Rom スプラインで滑らかに補間した断面表を作る
 _HEAD_DENSE = catmull(np.column_stack([HEAD_H, HEAD_W, HEAD_F, HEAD_B, HEAD_NOSE]), 12)
@@ -236,7 +237,7 @@ class Head:
     """頭（肌の面）。高さごとの断面を、前後で半径の違う楕円に鼻の出っ張りを足した形でつなぐ。
     r は髪の面を置くための大きさの目安（楕円体の半径）として残している。"""
 
-    def __init__(self, chin_y=0.856, height=0.148, z=-0.004, flat=2.65):
+    def __init__(self, chin_y=0.860, height=0.138, z=-0.004, flat=2.55):
         self.H, self.y0, self.flat = height, chin_y, flat
         f, b = max(HEAD_F), max(HEAD_B)
         self.zc = z - (b - f) / 2 * height  # 前後のいちばん出た所の真ん中を z に合わせる
@@ -249,8 +250,8 @@ class Head:
         w, f, b, nose = (np.interp(h, _HEAD_H_S, t) * self.H for t in (_HEAD_W_S, _HEAD_F_S, _HEAD_B_S, _HEAD_NOSE_S))
         sp, cp = np.sin(phi), np.cos(phi)
         d = np.where(cp > 0, f, b)
-        # あご〜フェイスライン下部（h < 0.35）は角張らないすっきりした卵形（n ≈ 1.75）にし、目元（h >= 0.35）は平らにする
-        n_front = 1.75 + (self.flat - 1.75) * smoothstep(0.08, 0.36, h)
+        # あご〜フェイスライン下部（h < 0.35）は内側へ凹まないふっくらした超楕円（n >= 2.35）にし、美少女らしい頬の丸みを出す
+        n_front = 2.35 + (self.flat - 2.35) * smoothstep(0.08, 0.36, h)
         n = np.where(cp > 0, n_front, 2.0)
         rho = (np.abs(sp / w) ** n + np.abs(cp / d) ** n) ** (-1 / n)
         return rho + nose * np.exp(-((rho * sp) / (0.046 * self.H)) ** 2) * np.clip(cp, 0, 1) ** 2.0
@@ -287,13 +288,20 @@ class Head:
         return e1, e2
 
     def project(self, d0, ab, off, plane_dir=None):
-        """接平面上の (a, b) を頭の表面に貼り付ける。off は表面からの浮かせ量（中心からの距離の比）。
-        plane_dir を渡すと、中心位置は d0 のまま接平面の向きだけを正面寄りにできる（目が側面に回り込むのを防ぐ）。"""
-        e1, e2 = self.basis(d0 if plane_dir is None else plane_dir)
+        """接平面上の (a, b) を頭の表面に水平投影して貼り付ける。
+        球中心からの放射投影だと顔の下部（口や目尻）で外側ほど Y が上へ引っ張られて歪むため、
+        接平面上の高さ q_y をそのまま頭の表面の高さ h に対応させて歪みを防ぐ。"""
+        p0 = self.point(d0)
+        pdir = d0 if plane_dir is None else plane_dir
+        e1 = norm(np.cross(np.array([pdir[0], 0.0, pdir[2]]), UP))
+        e2 = UP
         ab = np.asarray(ab, float)
-        q = self.point(d0) + ab[..., :1] * e1 + ab[..., 1:2] * e2
-        p = self.point(q - self.c)
-        return self.c + (p - self.c) * (1 + off)
+        q = p0 + ab[..., :1] * e1 + ab[..., 1:2] * e2
+        h_q = np.clip((q[..., 1] - self.y0) / self.H, 0.0, 1.0)
+        phi_q = np.arctan2(q[..., 0], self.zc - q[..., 2])
+        p = self.surface(h_q, phi_q)
+        out = norm(np.stack([p[..., 0], (p[..., 1] - self.c[1]) * 0.25, p[..., 2] - self.zc], -1))
+        return p + out * (off * 0.085)
 
     def mesh(self, nh=48, nphi=64):
         hs = np.linspace(0, 1, nh)
@@ -371,11 +379,11 @@ class Character:
         self.skin_color = skin_color
         self.eye_color = np.array(eye_color, float)
         self.bust = bust
-        # 目・鼻・口の高さは、あご先からの高さ（頭の肌の高さ比）で決める
-        self.eye = dict(yaw=0.35, h=0.42, rx=0.0205, ry=0.0185, top=0.85, tilt=0.0, iris=0.74, iris_in=0.0)
+        # 目・鼻・口の高さは、あご先からの高さ（頭の肌の高さ比）で決める（美少女モデルの黄金比：目は中段より下、鼻・口はコンパクトに配置）
+        self.eye = dict(yaw=0.515, h=0.380, rx=0.0205, ry=0.0155, top=0.86, tilt=0.0, iris=0.64, iris_in=0.04)
         self.eye.update(eye or {})
         self.eye["pitch"] = self.head.pitch_at(self.eye["h"], self.eye["yaw"])
-        self.mouth = dict(rx=0.0075, ry=0.0016, smile=-0.8, open_bottom=1.0, h=0.14, nose_h=0.27, fang=False)
+        self.mouth = dict(rx=0.0082, ry=0.0010, smile=1.0, open_bottom=1.0, h=0.120, nose_h=0.235, fang=False)
         self.mouth.update(mouth or {})
         self.mouth["pitch"] = self.head.pitch_at(self.mouth["h"])
         self.mouth["nose_pitch"] = self.head.pitch_at(self.mouth["nose_h"], 0.02)
@@ -541,24 +549,33 @@ class Character:
         h = self.head
         hmesh = h.mesh()
         self._head_mesh = hmesh
-        self._head_info = m.add("skin", hmesh, m.skin_fixed("頭"), normals=lambda v: norm((v - h.c) / h.r))
-        # 耳：アニメの 3D モデル（ref の N4D）に合わせ、目の中ほどから鼻の下までの高さ（頭の高さの 2 割）、
-        # 頭の横の少し後ろに付け、後ろの縁を 30° ほど外へ立て、上を外へ開く
+
+        def head_normals(v):
+            # 輪郭線の押し出しが均一になる滑らかな楕円体法線をベースにしつつ、
+            # 顔前面（頬・鼻下・口元）の法線の下向き成分を抑えてアニメ調の明るく均一な肌ライティングにする
+            base_n = norm((v - h.c) / h.r)
+            front_w = np.clip((h.zc - v[:, 2]) / 0.038, 0.0, 1.0) * np.clip(1.0 - np.abs(v[:, 0]) / 0.046, 0.0, 1.0)
+            target_n = norm(np.column_stack([base_n[:, 0] * 0.55, np.maximum(base_n[:, 1], 0.12), np.minimum(base_n[:, 2], -0.85)]))
+            return norm(base_n * (1.0 - front_w[:, None]) + target_n * front_w[:, None])
+
+        self._head_info = m.add("skin", hmesh, m.skin_fixed("頭"), normals=head_normals)
+        # 耳：アニメの 3D モデル（ref の N4D）に合わせ、目の中ほどから鼻の下までの高さ（h=0.32）、
+        # 頭の横の少し後ろに控えめに添える
         for s in (1, -1):
-            phi = s * (np.pi / 2 + 0.15)
-            p = h.surface(0.40, phi)
+            phi = s * (np.pi / 2 + 0.16)
+            p = h.surface(0.32, phi)
             out = np.array([np.sin(phi), 0.0, -np.cos(phi)])          # 頭の外向き
             back = np.array([-np.cos(phi) * s, 0.0, -np.sin(phi) * s])  # 頭の表面に沿って後ろ向き
             back = norm(back - out * (back @ out))
             up = norm(np.array([0.0, 1.0, 0.18]))                     # 上をやや後ろへ倒す
-            n = norm(out * np.cos(0.55) - back * np.sin(0.55))          # 面は外のやや前を向く（後ろの縁が立つ）
-            n, up = norm(n * np.cos(0.25) - up * np.sin(0.25)), norm(up * np.cos(0.25) + n * np.sin(0.25))  # 上を外へ開く
+            n = norm(out * np.cos(0.42) - back * np.sin(0.42))          # 面は外のやや前を向く
+            n, up = norm(n * np.cos(0.18) - up * np.sin(0.18)), norm(up * np.cos(0.18) + n * np.sin(0.18))
             bk = norm(np.cross(up, n)) * (1 if np.cross(up, n) @ back > 0 else -1)
-            outer, inner = ear(p + back * 0.0070 + out * 0.0010, n, up, bk)
+            outer, inner = ear(p + back * 0.0065 - out * 0.0005, n, up, bk, a=0.0078, b=0.0138)
             m.add("skin", outer, m.skin_fixed("頭"))
             m.add("ear_in", inner, m.skin_fixed("頭"))
-        neck = np.array([[0, 0.785, 0.008], [0, 0.835, 0.004], [0, 0.895, 0.002]])
-        m.add(neck_mat, tube(neck, [0.023, 0.0195, 0.019], n=16), m.skin_auto(["上半身2", "首", "頭"], {"頭": 1.3}))
+        neck = np.array([[0, 0.785, 0.008], [0, 0.835, 0.005], [0, 0.895, 0.006]])
+        m.add(neck_mat, tube(neck, [0.0205, 0.0170, 0.0160], n=16), m.skin_auto(["上半身2", "首", "頭"], {"頭": 1.3}))
 
         # 胴体（胸・谷間・くびれ・へそを一体成形した滑らかな高密度メッシュ：楕円体の継ぎ目溝や2重メッシュの突き抜けが一切出ない）
         chest_ys = np.linspace(0.660, 0.780, 36)
@@ -707,7 +724,11 @@ class Character:
             m.add(mat, loft(f_rings, cap0=True, cap1=True, centers=sub_pts), fskin)
 
     def _banded(self, rings, centers, keys, bands, skin, cap0=False, cap1=False, descending=True, mat_fn=None):
-        """リング列を境目で切って材質ごとに張る（境目のリングは共有）。"""
+        """リング列を境目で切って材質ごとに張る（境目のリングと法線は全体メッシュで共有し、材質境界の輪郭線割れを防ぐ）。"""
+        full_verts, full_faces = loft(rings, cap0=cap0, cap1=cap1, centers=centers)
+        full_nrm = _merge_seams(full_verts, vertex_normals(full_verts, full_faces))
+        nrm_map = {tuple(k): n for k, n in zip(np.round(full_verts * 1e5).astype(np.int64), full_nrm)}
+        nrm_fn = lambda v: np.array([nrm_map[tuple(k)] for k in np.round(v * 1e5).astype(np.int64)])
         runs = []
         cur, start = None, 0
         for i, k in enumerate(keys):
@@ -724,14 +745,14 @@ class Character:
             mesh = loft(rings[a:b + 1], cap0=cap0 and idx == 0, cap1=cap1 and idx == len(runs) - 1,
                         centers=centers[a:b + 1])
             if mat_fn is None:
-                self.m.add(mat, mesh, skin)
+                self.m.add(mat, mesh, skin, normals=nrm_fn)
             else:
                 verts, faces = mesh
                 cen = verts[faces].mean(axis=1)
                 f_mats = [mat_fn(c_pt, mat) for c_pt in cen]
                 for sub_mat in dict.fromkeys(f_mats):
                     sel = np.array([fm == sub_mat for fm in f_mats])
-                    self.m.add(sub_mat, MeshData(verts, faces[sel], mesh.uv), skin)
+                    self.m.add(sub_mat, MeshData(verts, faces[sel], mesh.uv), skin, normals=nrm_fn)
 
     # ---- 顔 ----
     def build_face(self, closed_mouth_color=(0.45, 0.16, 0.17), blush=True, brow_color=None):
@@ -786,18 +807,18 @@ class Character:
 
         for jp, en, s in SIDES:
             d0 = Head.dir(s * E["yaw"], E["pitch"])
-            # 目の接平面は正面寄りに向け、目尻が側頭部へ回り込みすぎず丸いドーム型がそのまま見えるようにする
-            pdir = Head.dir(s * E["yaw"] * 0.48, E["pitch"] * 0.85)
+            # 目の接平面は正面寄りに向け、こめかみの余白を残しつつ丸いドーム型の目が正面を向くようにする
+            pdir = Head.dir(s * E["yaw"] * 0.35, E["pitch"] * 0.80)
             tilt = E["tilt"]
 
             def tilted(rows):
                 return [np.stack([r[:, 0], r[:, 1] + tilt * r[:, 0] * s], 1) for r in rows]
 
-            # 白目とまつ毛の上下端をそろえ、瞳の上端を上まつ毛の下にしっかり潜らせて白目の隙間が出ないようにする
+            # 瞳の下端を下まぶた（-0.94*ry）にしっかり接しさせ、三白眼にならず大きな黒目が収まるようにする
             layers = [
-                ("eye_white", plane(rx * 1.00, -0.96 * ry, 0.96 * ry * E["top"], s), 0.0025, "頭"),
-                ("iris", plane(rx * E["iris"], -0.92 * ry, 1.03 * ry * E["top"], s, cx=-s * E["iris_in"] * rx), 0.0048, jp + "目"),
-                ("lash", plane(rx * 1.08, -0.98 * ry, 1.04 * ry * E["top"], s), 0.0072, "頭"),
+                ("eye_white", plane(rx * 1.00, -0.95 * ry, 0.95 * ry * E["top"], s), 0.0025, "頭"),
+                ("iris", plane(rx * E["iris"], -0.94 * ry, 0.88 * ry * E["top"], s, cx=-s * E["iris_in"] * rx), 0.0048, jp + "目"),
+                ("lash", plane(rx * 1.06, -0.96 * ry, 1.02 * ry * E["top"], s), 0.0072, "頭"),
             ]
             for mat, rows, off, bone in layers:
                 rows = tilted(rows)
@@ -806,9 +827,9 @@ class Character:
                 m.add_morph_part("笑い", base, h.decal(d0, remap_ab(rows, closer(0.28)), off, closed=False, plane_dir=pdir)[0])
                 m.add_morph_part("ウィンク" if s > 0 else "ウィンク右", base,
                                  h.decal(d0, remap_ab(rows, closer(-0.20)), off, closed=False, plane_dir=pdir)[0])
-            bd = Head.dir(s * (E["yaw"] * 0.90), E["pitch"] + 0.34)
-            bpdir = Head.dir(s * E["yaw"] * 0.48, E["pitch"] + 0.28)
-            brow_rows = plane(rx * 0.92, -0.0042, 0.0042, s)
+            bd = Head.dir(s * (E["yaw"] * 0.92), E["pitch"] + 0.25)
+            bpdir = Head.dir(s * E["yaw"] * 0.38, E["pitch"] + 0.20)
+            brow_rows = plane(rx * 0.88, -0.0036, 0.0036, s)
             b_base = m.add("brow", h.decal(bd, brow_rows, 0.0085, closed=False, plane_dir=bpdir), m.skin_fixed("頭"))
             # 眉の表情モーフ（にこり・怒り・困る・まばたき・笑い）
             m.add_morph_part("笑い", b_base, h.decal(bd, remap_ab(brow_rows, lambda r: r + [0, -0.0025]), 0.0085, closed=False, plane_dir=bpdir)[0])
@@ -816,10 +837,10 @@ class Character:
             m.add_morph_part("怒り", b_base, h.decal(bd, remap_ab(brow_rows, lambda r, s=s: np.stack([r[:, 0], r[:, 1] + 0.22 * r[:, 0] * s - 0.002], 1)), 0.0085, closed=False, plane_dir=bpdir)[0])
             m.add_morph_part("困る", b_base, h.decal(bd, remap_ab(brow_rows, lambda r, s=s: np.stack([r[:, 0], r[:, 1] - 0.22 * r[:, 0] * s + 0.002], 1)), 0.0085, closed=False, plane_dir=bpdir)[0])
             if blush:
-                # 目の白目にかからないよう、目の下・頬の外寄りにふんわり配置する
-                cd = Head.dir(s * 0.48, self.head.pitch_at(0.31, 0.48))
-                cpdir = Head.dir(s * 0.32, self.head.pitch_at(0.31, 0.32))
-                m.add("blush", h.decal(cd, plane(0.016, -0.0068, 0.0068, s), 0.0020, closed=False, plane_dir=cpdir), m.skin_fixed("頭"))
+                # 目のすぐ下・頬の高い位置（h=0.255）にふんわり配置する
+                cd = Head.dir(s * 0.44, self.head.pitch_at(0.255, 0.44))
+                cpdir = Head.dir(s * 0.30, self.head.pitch_at(0.255, 0.30))
+                m.add("blush", h.decal(cd, plane(0.014, -0.0058, 0.0058, s), 0.0020, closed=False, plane_dir=cpdir), m.skin_fixed("頭"))
 
         # 鼻：繊細な縦の影線と鼻先の下の淡い影
         nd = Head.dir(0.008, M["nose_pitch"])
@@ -829,9 +850,9 @@ class Character:
         md = Head.dir(0.0, M["pitch"])
         if is_closed_mouth:
             # 普段は閉じた微笑みリップライン。口内メッシュは極小にして裏に隠し、あいうえおモーフで開く
-            lip_base_ab = plane(M["rx"], -0.0024, 0.0024, 1.0, cols=15, rows=5)
+            lip_base_ab = plane(M["rx"], -0.0026, 0.0026, 1.0, cols=19, rows=5)
             in_base_ab = mouth_grid_ab(M["rx"] * 0.65, 0.0002, M["smile"] * 0.2, top=0.45, bottom=0.55)
-            base_lip = m.add("mouth", h.decal(md, lip_base_ab, 0.0045, closed=False), m.skin_fixed("頭"))
+            base_lip = m.add("mouth", h.decal(md, lip_base_ab, 0.0075, closed=False), m.skin_fixed("頭"))
             base_in = m.add("mouth_in", h.decal(md, in_base_ab, 0.0010, closed=False), m.skin_fixed("頭"))
         else:
             # 普段から開いた元気な口（キリコ・フェリス）：外周のリップ縁 ("mouth") と内側の歯・舌 ("mouth_in")
@@ -881,10 +902,10 @@ class Character:
         return self.m.material(key, name, color, tex=T.hair(f"hair_{key}.png", color, tip),
                                sphere=T.hair_sphere(), sphere_mode=2)
 
-    def hair_surface(self, scale=(1.06, 1.02, 1.07), lift=(0, 0.000, 0.006)):
+    def hair_surface(self, scale=(1.07, 1.05, 1.07), lift=(0, 0.003, 0.006)):
         return self.head.c + np.array(lift), self.head.r * np.array(scale)
 
-    def hair_cap(self, mat, keep=None, scale=(1.06, 1.02, 1.07)):
+    def hair_cap(self, mat, keep=None, scale=(1.07, 1.05, 1.07)):
         c, r = self.hair_surface(scale)
         if keep is None:
             def keep(d):
@@ -921,7 +942,7 @@ class Character:
                     self.m.add(mats[start], mesh, skin)
                 start = i
 
-    def bang(self, mat, theta, e_end, width, thick=0.006, e_start=1.25, pointy=True, scale=(1.06, 1.02, 1.07),
+    def bang(self, mat, theta, e_end, width, thick=0.006, e_start=1.25, pointy=True, scale=(1.07, 1.05, 1.07),
              lift_end=1.07, mats=None, sway=0.0):
         c, r = self.hair_surface(scale)
         phis = np.linspace(e_start, e_end, 14)
@@ -934,12 +955,12 @@ class Character:
         if pointy:
             w = width * (1 - 0.85 * (t ** 2.8))
         else:
-            # 姫カット・ぱっつんでも先端のわずか 15% だけをすっと絞って自然な毛束の先端にする
-            w = width * (1 - 0.28 * np.clip((t - 0.85) / 0.15, 0.0, 1.0) ** 1.6)
+            # 姫カット・ぱっつんでも毛先 35% をすっと絞って束ごとの繊細なすき間（眉がのぞくスリット）を作る
+            w = width * (1 - 0.52 * np.clip((t - 0.65) / 0.35, 0.0, 1.0) ** 1.5)
         self.strand(path, w, thick, sides, mats or mat, blunt=False)
 
     def drape(self, mat, theta, y_end, width, thick=0.007, e0=1.05, flare=0.10, pointy=True,
-              scale=(1.06, 1.02, 1.07), mats_fn=None, clearance=(0.100, 0.090, 0.074), wave=0.0, bones=0, splay=0.0):
+              scale=(1.07, 1.05, 1.07), mats_fn=None, clearance=(0.100, 0.090, 0.074), wave=0.0, bones=0, splay=0.0):
         """頭から垂れ下がる髪の束。体（肩・胸）をよけて外側に広がる。bones を渡すと物理で揺れる。
         splay はあごの高さから下へ行くほど外へ開く量（姫毛を顔から離して広げる）。"""
         c, r = self.hair_surface(scale)

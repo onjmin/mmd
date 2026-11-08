@@ -49,6 +49,7 @@
     <button id="back">後ろ</button>
     <button id="face">顔</button>
     <label><input type="checkbox" id="physics" checked> 物理</label>
+    <label><input type="checkbox" id="outline" checked> 輪郭線 <input type="range" id="outlineWidth" min="0.5" max="5" step="0.1" value="1.8"></label>
   </div>
   <div id="morphs"></div>
 </div>
@@ -83,6 +84,25 @@ scene.add(light);
 const camera = new THREE.PerspectiveCamera(30, W() / innerHeight, 0.1, 500);
 const controls = new OrbitControls(camera, renderer.domElement);
 let mesh = null, physics = null, posing = false, t = 0;
+if (Q.get("outline") !== null) document.getElementById("outline").checked = Q.get("outline") !== "0";
+if (Q.get("edge") !== null) document.getElementById("outlineWidth").value = Q.get("edge");
+
+function updateOutline() {
+  if (!mesh) return;
+  const on = document.getElementById("outline").checked;
+  const w = +document.getElementById("outlineWidth").value;
+  mesh.material.forEach((mt) => {
+    const p = mt.userData.outlineParameters;
+    if (!p) return;
+    if (p.baseVisible === undefined) p.baseVisible = p.visible;
+    p.visible = on && p.baseVisible;
+    p.color = [0, 0, 0];
+    p.alpha = 1.0;
+    p.thickness = w * 0.0012;
+  });
+}
+document.getElementById("outline").onchange = updateOutline;
+document.getElementById("outlineWidth").oninput = updateOutline;
 
 function view(name) {
   const h = mesh ? new THREE.Box3().setFromObject(mesh).max.y : 20;
@@ -109,6 +129,7 @@ function load(name) {
       mt.color.setRGB(Math.min(1, c.r), Math.min(1, c.g), Math.min(1, c.b)).multiplyScalar(1 / LIGHT);
       mt.emissive.setRGB(0, 0, 0);
     });
+    updateOutline();
     await ammoReady;
     const d = m.geometry.userData.MMD;
     if (d.rigidBodies.length) physics = new MMDPhysics(m, d.rigidBodies, d.constraints, { unitStep: 1 / 65, maxStepNum: 3 });

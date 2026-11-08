@@ -94,9 +94,9 @@ class Model:
         self.default_toon_tex = None  # toon_tex を省いた材質に使うトゥーン
 
     # ---- 材質 ----
-    def material(self, key, name, color, double=False, edge=True, toon=1, edge_size=0.6, shade=0.4,
-                 tex=None, sphere=None, sphere_mode=1, toon_tex=None, alpha=1.0, shadow=True):
-        """tex を渡すと色はテクスチャから取り、color は輪郭線の色を決めるのに使う。"""
+    def material(self, key, name, color, double=False, edge=True, toon=1, edge_size=1.2, shade=0.4,
+                 tex=None, sphere=None, sphere_mode=1, toon_tex=None, alpha=1.0, shadow=True, edge_color=(0.0, 0.0, 0.0)):
+        """tex を渡すと色はテクスチャから取る。輪郭線は既定で黒（edge_color=(0, 0, 0)）にする。"""
         if key in self._mat:
             return key
         flags = (pmx.MAT_GROUND_SHADOW | pmx.MAT_SHADOW_MAP | pmx.MAT_SELF_SHADOW) if shadow else 0
@@ -106,7 +106,7 @@ class Model:
             flags |= pmx.MAT_EDGE
         toon_tex = toon_tex or self.default_toon_tex
         c = tuple(float(x) for x in color)
-        ec = tuple(max(0.0, x * 0.35) for x in c)
+        ec = tuple(float(x) for x in edge_color)
         diffuse = (1.0, 1.0, 1.0) if tex else c
         mt = Material(name, key, diffuse, tuple(x * shade for x in diffuse), flags, edge_size, ec, toon,
                       tex=tex, sphere=sphere, sphere_mode=sphere_mode, toon_tex=toon_tex, alpha=alpha)

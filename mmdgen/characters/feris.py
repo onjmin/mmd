@@ -27,8 +27,8 @@ SOCK = (0.97, 0.96, 0.92)
 def build(out_dir):
     m = Model("フェリス", "Feris", "フェリス（非公式・二次創作モデル）", 150)
     c = Character(m, tex=TextureSet(out_dir), hair_color=HAIR, skin_color=(1.0, 0.87, 0.79), eye_color=(0.82, 0.12, 0.12), bust=1.18,
-                  eye=dict(yaw=0.61, h=0.45, rx=0.0230, ry=0.0170, top=0.82, iris=0.49, iris_in=0.11),
-                  mouth=dict(rx=0.0140, ry=0.0055, smile=-1.0, fang=True))
+                  eye=dict(yaw=0.525, h=0.380, rx=0.0205, ry=0.0155, top=0.86, iris=0.64, iris_in=0.04),
+                  mouth=dict(rx=0.0105, ry=0.0038, smile=-0.8, h=0.120, nose_h=0.235, fang=True))
     m.material("top", "タンクトップ", TOP, toon=0)
     m.material("skirt", "スカート", SKIRT, double=True, toon=0)
     m.material("shorts", "インナー", SKIRT, toon=0)

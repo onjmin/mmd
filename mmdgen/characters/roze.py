@@ -23,10 +23,11 @@ KH_YC, KH_RX, KH_RY = 0.746, 0.036, 0.0115
 def build(out_dir):
     m = Model("束音ロゼ", "Tabane Roze", "束音ロゼ（非公式・二次創作モデル）", 165)
     c = Character(m, tex=TextureSet(out_dir), hair_color=HAIR, skin_color=(1.0, 0.86, 0.76), eye_color=(0.12, 0.62, 0.46), bust=1.24,
-                  eye=dict(yaw=0.575, h=0.450, rx=0.0240, ry=0.0176, top=0.80, iris=0.45, iris_in=0.14),
-                  mouth=dict(rx=0.0115, ry=0.0009, smile=5.0, h=0.140, nose_h=0.275))
+                  eye=dict(yaw=0.515, h=0.380, rx=0.0205, ry=0.0155, top=0.86, iris=0.64, iris_in=0.04),
+                  mouth=dict(rx=0.0082, ry=0.0009, smile=1.0, h=0.120, nose_h=0.235))
     m.material("black", "服", BLACK, toon=0)
     m.material("red", "赤", RED, toon=0)
+    m.material("red_trim", "赤縁", RED, toon=0, edge=False)
     m.material("red_d", "腰布", RED, double=True, toon=0)
     m.material("pink_d", "炎", PINK, double=True, toon=0)
     m.material("pale_d", "炎の先", PALE_PINK, double=True, toon=0)
@@ -42,7 +43,7 @@ def build(out_dir):
     m.material("sleeve", "袖", BLACK, double=True, toon=0)
     c.hair_material("hair", "髪", HAIR)
     c.hair_material("teal", "髪（内側）", TEAL)
-    m.material("gold", "金具", GOLD, toon=0)
+    m.material("gold", "金具", GOLD, toon=0, edge=False)
     m.material("gray", "ヘッドセット", (0.32, 0.32, 0.36), toon=0)
     m.material("jade", "髪飾り（緑）", (0.40, 0.80, 0.62), toon=0)
 
@@ -64,7 +65,7 @@ def build(out_dir):
     # 胸元の横長開口の赤いパイピング縁取り（胸と谷間の3D曲面に隙間なく密着させる）
     kh_a = np.linspace(0, TAU, 49)
     kh_pts = c.torso_point_xy(KH_RX * np.cos(kh_a), KH_YC + KH_RY * np.sin(kh_a), sg=-1, offset=0.0008)
-    m.add("red", tube(kh_pts, 0.0022, n=10), m.skin_fixed("上半身2"))
+    m.add("red_trim", tube(kh_pts, 0.0022, n=10), m.skin_fixed("上半身2"))
 
     # 袖ぐりの赤いパイピング縁取り（前〜脇の下〜後ろを1本の滑らかなU字ループでつなぐ）と、赤いアンダーバスト帯
     for s in (1, -1):
@@ -72,7 +73,7 @@ def build(out_dir):
         ah_y_b = np.linspace(0.735, 0.838, 16)[1:]
         pts_f = c.torso_point_xy(s * armhole_x(ah_y_f), ah_y_f, sg=-1, offset=0.0008)
         pts_b = c.torso_point_xy(s * armhole_x(ah_y_b), ah_y_b, sg=1, offset=0.0008)
-        m.add("red", tube(np.vstack([pts_f, pts_b]), 0.0018, n=8), torso)
+        m.add("red_trim", tube(np.vstack([pts_f, pts_b]), 0.0023, n=8), torso)
     ub_angs = np.arange(64) / 64 * TAU
     ub_rings = [c.torso_ring_point(y, ub_angs, offset=0.0014) for y in (0.661, 0.656, 0.652)]
     m.add("red", loft(ub_rings, cap0=True, cap1=True, centers=[[0, 0.661, 0], [0, 0.656, 0], [0, 0.652, 0]]), torso)
@@ -80,15 +81,15 @@ def build(out_dir):
     # 首の下半分を覆う立て襟と、その縁の赤
     m.add("black", tube([[0, 0.784, 0.008], [0, 0.815, 0.006], [0, 0.846, 0.004]], [0.0255, 0.0225, 0.0218], n=20),
           m.skin_auto(["上半身2", "首"]))
-    m.add("red", torus([0, 0.846, 0.004], [0, 1, 0], 0.0218, 0.0025), m.skin_fixed("首"))
+    m.add("red_trim", torus([0, 0.846, 0.004], [0, 1, 0], 0.0218, 0.0025), m.skin_fixed("首"))
     # 襟の金ボタン、中央の赤い縦ライン、胸の上の赤い飾り結び 2 本
     m.add("gold", ellipsoid([0, 0.828, -0.0235], [0.0035] * 3, nu=10, nv=6), m.skin_fixed("首"))
     v_top_y = np.linspace(0.786, KH_YC + KH_RY, 6)
-    m.add("red", tube(c.torso_point_xy(np.zeros_like(v_top_y), v_top_y, sg=-1, offset=0.0012), 0.0015, n=6), m.skin_fixed("上半身2"))
+    m.add("red_trim", tube(c.torso_point_xy(np.zeros_like(v_top_y), v_top_y, sg=-1, offset=0.0012), 0.0015, n=6), m.skin_fixed("上半身2"))
     for y in (0.775, 0.764):
         fx = np.linspace(-0.015, 0.015, 9)
         fy = y - 0.0008 * (1.0 - (fx / 0.015) ** 2)
-        m.add("red", tube(c.torso_point_xy(fx, fy, sg=-1, offset=0.0014), 0.0019, n=8), m.skin_fixed("上半身2"))
+        m.add("red_trim", tube(c.torso_point_xy(fx, fy, sg=-1, offset=0.0014), 0.0019, n=8), m.skin_fixed("上半身2"))
 
     # ベルト（体に沿わせて隙間をなくす）と、雲模様の彫りが入った四角い金バックル
     belt_rings = [c.torso_ring_point(y, ub_angs, offset=0.0028) for y in np.linspace(0.578, 0.560, 4)]
@@ -164,16 +165,18 @@ def roze_torso_snap(c, r_pts, y, angs):
     if abs(y - KH_YC) < KH_RY:
         x_kh = KH_RX * np.sqrt(max(0.0, 1.0 - ((y - KH_YC) / KH_RY) ** 2))
         for s in (-1.0, 1.0):
-            front_idx = np.nonzero(sa < -0.15)[0]
+            front_idx = np.nonzero(sa < -0.25)[0]
             best = front_idx[np.argmin(np.abs(pts[front_idx, 0] - s * x_kh))]
-            pts[best] = c.torso_point_xy(s * x_kh, y, sg=-1)
-    if y > 0.735:
+            if abs(pts[best, 0] - s * x_kh) < 0.0045:
+                pts[best] = c.torso_point_xy(s * x_kh, y, sg=-1)
+    if y > 0.742:
         x_ah = float(armhole_x(y))
         for s in (-1.0, 1.0):
-            for sg, mask in ((-1, sa <= 0), (1, sa > 0)):
+            for sg, mask in ((-1, sa < -0.22), (1, sa > 0.22)):
                 side_idx = np.nonzero(mask)[0]
                 best = side_idx[np.argmin(np.abs(pts[side_idx, 0] - s * x_ah))]
-                pts[best] = c.torso_point_xy(s * x_ah, y, sg=sg)
+                if abs(pts[best, 0] - s * x_ah) < 0.0045:
+                    pts[best] = c.torso_point_xy(s * x_ah, y, sg=sg)
     return pts
 
 
@@ -236,24 +239,23 @@ def hair(c):
     m = c.m
     c.hair_cap("hair")
     rng = np.random.default_rng(7)
-    # 姫カットの前髪：額にすっきり沿う薄い平板状の束をそろえ、立ち絵と同じ位置に繊細なスリットを入れる
+    # 姫カットの前髪：上まつ毛のすぐ上まで下ろし、束のあいだに眉がちらりとのぞく繊細なスリットを作る
     bang_specs = [
-        (-0.64, 0.18, 0.020),
-        (-0.50, 0.19, 0.022),
-        (-0.34, 0.20, 0.020),
-        (-0.17, 0.20, 0.022),
-        (-0.02, 0.20, 0.022),
-        ( 0.14, 0.20, 0.022),
-        ( 0.30, 0.20, 0.020),
-        ( 0.48, 0.19, 0.022),
-        ( 0.63, 0.18, 0.020),
+        (-0.50, -0.09, 0.0110),
+        (-0.37, -0.07, 0.0102),
+        (-0.19, -0.06, 0.0096),
+        (-0.06, -0.06, 0.0102),
+        ( 0.07, -0.06, 0.0102),
+        ( 0.24, -0.06, 0.0096),
+        ( 0.37, -0.07, 0.0102),
+        ( 0.50, -0.09, 0.0110),
     ]
     for th, e_end, w in bang_specs:
-        c.bang("hair", th, e_end, w, thick=0.0040, e_start=1.25, pointy=False, lift_end=1.045)
-    # こめかみ〜頬の横に垂れる姫毛（前髪と横髪のすき間を埋め、あごの高さまで下ろす）
+        c.bang("hair", th, e_end, w, thick=0.0036, e_start=1.25, pointy=False, lift_end=1.032)
+    # こめかみ〜頬のすぐ横に段差で垂れる姫毛（目尻のすぐ外から耳の前を覆い、小顔シルエットを作る）
     for sg in (1, -1):
-        for th, e_end, w in [(0.76, -0.22, 0.015), (0.86, -0.62, 0.014), (0.96, -0.72, 0.013), (1.08, -0.45, 0.016)]:
-            c.bang("hair", sg * th, e_end, w, thick=0.0045, e_start=1.25, pointy=True, lift_end=1.038)
+        for th, e_end, w in [(0.58, -0.28, 0.0105), (0.68, -0.48, 0.0105), (0.79, -0.60, 0.0105), (0.90, -0.66, 0.0105), (1.02, -0.45, 0.0115)]:
+            c.bang("hair", sg * th, e_end, w, thick=0.0040, e_start=1.25, pointy=True, lift_end=1.028)
     # 結い髪から下がる左右の房：玉の下から外へ張り出し、あごの下で外へはねる。1〜2 本は胸まで、奥の緑は腰まで
     hc, hr = c.hair_surface()
     for sg in (1, -1):
