@@ -43,7 +43,7 @@ def build(out_dir):
     m.add("coat", parts.band_around_torso(0.800, 0.650, lambda y: 1.20 if y < 0.79 else 1.35, a0, a1, steps=8),
           torso)
     # 肩まで広がる大きなファーの襟
-    m.add("fur", torus([0, 0.792, 0.004], [0, 1, 0], 0.060, 0.024), m.skin_auto(["上半身2", "首"]))
+    m.add("fur", torus([0, 0.822, 0.009], [0, 1, 0], 0.062, 0.020), m.skin_auto(["上半身2", "首"]))
     rx, rz, cz = parts.torso_r(0.650, 1.2)
     hem = ring([0, 0.650, cz], [1, 0, 0], [0, 0, 1], rx, rz, 40, a0, a1, closed=False)
     m.add("fur", tube(hem, 0.009, n=8, rmod=fluffy), torso)

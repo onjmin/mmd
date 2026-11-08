@@ -113,7 +113,7 @@ def hat(c):
 
 def strap(x, y0, off=0.0035):
     """肩ひも：x の縦の断面で胴の表面に沿い、前の y0 から肩を越えて後ろの y0 まで回る。"""
-    ys = np.linspace(y0, 0.826, 40)
+    ys = np.linspace(y0, 0.840, 60)
     rx, rz, cz = parts.torso_r(ys)
     ys, rz, cz, rx = ys[rx > abs(x) + 0.004], rz[rx > abs(x) + 0.004], cz[rx > abs(x) + 0.004], rx[rx > abs(x) + 0.004]
     d = rz * np.sqrt(1 - (x / rx) ** 2) + off

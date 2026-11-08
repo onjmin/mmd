@@ -39,12 +39,15 @@ def build(out_dir):
     m.material("gray", "ヘッドセット", (0.32, 0.32, 0.36), toon=0)
     m.material("jade", "髪飾り（緑）", (0.40, 0.80, 0.62), toon=0)
 
-    c.build_body(torso_bands=[(1.0, "black"), (0.655, "skin"), (0.566, "black")],
+    c.build_body(torso_bands=[(1.0, "skin"), (0.730, "black"), (0.655, "skin"), (0.566, "black")],
                  leg_bands=[(1.0, "black"), (0.538, "skin")], arm_bands=[(-1.0, "skin")],
                  leg_cut=(0.538, 0.030))
     c.build_face()
 
     torso = c.skin_torso()
+    # 胸から上の身ごろ：前と後ろだけを覆い、肩は出す（袖ぐりは首の付け根からわきへ下りる線）
+    for sg in (-1, 1):
+        m.add("black", halter(sg), torso)
     # 襟のすぐ下の横長の開き・裾と襟の赤い縁取り
     m.add("skin", ellipsoid([0, 0.726, -0.052], [0.036, 0.015, 0.012]), m.skin_fixed("上半身2"))
     m.add("red", parts.band_around_torso(0.662, 0.652, 1.04, steps=2), torso)
@@ -68,7 +71,7 @@ def build(out_dir):
         sleeve, cuff = balloon_sleeve(s)
         m.add("sleeve", sleeve, arm)
         m.add("red", cuff, arm)
-        m.add("red", parts.arm_torus(s, 0.085, 0.029, 0.0035), arm)
+        m.add("red", parts.arm_torus(s, 0.085, 0.0185, 0.0035), arm)
         # 腰布：腰の横から垂れて脚の外〜後ろを覆い（前は開く）、裾が炎になる
         leg = c.skin_leg(jp)
         mid = 0.50 if s > 0 else np.pi - 0.50  # 0 が外側、π/2 が後ろ
@@ -99,15 +102,28 @@ def torso_z(y):
     return rz - cz
 
 
+def halter(sg, n=14):
+    """胸から上の身ごろの前（sg=-1）か後ろ（sg=1）。胴の輪の、袖ぐりの線より内側の弧をつなぐ。"""
+    rings, centers = [], []
+    for y in np.linspace(0.724, 0.840, 18):
+        rx, rz, cz = parts.torso_r(y, 1.012)
+        xc = min(np.interp(y, [0.724, 0.760, 0.800, 0.825, 0.840], [0.072, 0.066, 0.052, 0.036, 0.030]), rx * 0.999)
+        a0 = np.arccos(xc / rx)
+        a = np.linspace(a0, np.pi - a0, n)
+        rings.append(np.stack([rx * np.cos(a), np.full(n, y), cz + sg * rz * np.sin(a)], 1))
+        centers.append([0, y, cz])
+    return loft(rings, closed=False, centers=centers)
+
+
 def balloon_sleeve(s, t0=0.09, t1=0.33, n=22):
     """二の腕から始まる風船袖。下へ垂れて膨らみ、袖口の赤い筒で絞る。返り値は (袖, 袖口)。"""
     d = parts.arm_point(s, 1.0) - parts.arm_point(s, 0.0)
     d /= np.linalg.norm(d)
     up = np.array([s * np.sin(ARM_ANGLE), np.cos(ARM_ANGLE), 0.0])
     back = np.array([0, 0, 1.0])
-    radii = [0.030, 0.056, 0.078, 0.093, 0.100, 0.098, 0.086, 0.064]
+    radii = [0.022, 0.050, 0.078, 0.093, 0.100, 0.098, 0.086, 0.064]
     ts = np.linspace(t0, t1, len(radii))
-    sag = lambda r: max(0.0, r - 0.028) * 0.8  # 上は腕に乗り、膨らんだぶん下に垂れる
+    sag = lambda r: max(0.0, r - 0.018) * 0.8  # 上は腕に乗り、膨らんだぶん下に垂れる
     rings, centers = [], []
     for t, r in zip(ts, radii):
         c = parts.arm_point(s, t) - up * sag(r)
