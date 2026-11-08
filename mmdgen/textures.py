@@ -52,7 +52,7 @@ class TextureSet:
         for _ in range(28):
             c, s, a = rng.uniform(0, 1), rng.uniform(0.004, 0.02), rng.uniform(-0.10, 0.12)
             stripe += a * np.exp(-((u - c) / s) ** 2)
-        stripe += 0.05 * np.cos(u * np.pi * 2)  # 束の端を少し暗く
+        stripe += 0.015 * np.cos(u * np.pi * 2)  # 束の端をごく少し暗く
         v = np.linspace(0, 1, h)
         root = 0.82 + 0.18 * np.clip(v / 0.25, 0, 1)
         img = np.zeros((h, w, 3))

@@ -138,20 +138,26 @@ def shoulder_mark(s, t=0.045, w=0.014, h=0.008, r=0.0275):
 def hair(c):
     m = c.m
     c.hair_cap("hair")
-    # 姫カットの前髪
-    for th in np.linspace(-0.95, 0.95, 15):
+    rng = np.random.default_rng(7)  # 束ごとに太さと長さを少しずつ変え、筋がそろって見えないようにする
+    # 姫カットの前髪：隣と重なる幅にして、毛先の高さを少し乱す
+    for th in np.linspace(-0.95, 0.95, 13):
         side = abs(th) > 0.62
-        c.bang("hair", th, -0.55 if side else 0.20, 0.019, e_start=1.25, pointy=False,
-               lift_end=1.12 if side else 1.08)
-    # サイドの姫毛（胸まで）と、その奥の緑（へそのあたりまで）
+        e_end = (-0.55 if side else 0.20) + rng.uniform(-0.04, 0.04)
+        c.bang("hair", th + rng.uniform(-0.03, 0.03), e_end, 0.024 * rng.uniform(0.8, 1.25), thick=0.005,
+               e_start=1.25, pointy=False, lift_end=1.12 if side else 1.08)
+    # 横の姫毛：細い束を重ね、毛先は外へ散らす。奥の緑は胸の下〜へそまで
     for sg in (1, -1):
-        for th, y_end, mat_low in [(1.08, 0.70, "hair"), (1.30, 0.64, "teal"), (1.50, 0.62, "teal")]:
-            c.drape("hair", sg * th, y_end, 0.020, pointy=False, flare=0.06, bones=3,
+        for th, y_end, w, mat_low in [(1.02, 0.71, 0.014, "hair"), (1.12, 0.69, 0.012, "hair"),
+                                      (1.22, 0.73, 0.011, "hair"), (1.34, 0.64, 0.014, "teal"),
+                                      (1.48, 0.62, 0.016, "teal")]:
+            c.drape("hair", sg * (th + rng.uniform(-0.03, 0.03)), y_end + rng.uniform(-0.015, 0.015),
+                    w * rng.uniform(0.85, 1.2), thick=0.005, pointy=True, flare=0.22, bones=3,
                     mats_fn=lambda p, ml=mat_low: ml if p[1] < 0.79 else "hair")
-    # 後ろ髪（肩甲骨くらいまで）
-    for th in np.linspace(1.70, np.pi, 7):
+    # 後ろ髪（肩甲骨くらいまで）：幅と長さをばらし、毛先をとがらせる
+    for th in np.linspace(1.70, np.pi, 8):
         for sg in ((1, -1) if th < np.pi - 1e-3 else (1,)):
-            c.drape("hair", sg * th, 0.68, 0.034, flare=0.06, pointy=False, bones=3)
+            c.drape("hair", sg * th, 0.67 + rng.uniform(-0.03, 0.03), 0.032 * rng.uniform(0.8, 1.25),
+                    flare=0.10, pointy=True, bones=3)
     # 頭の両側の小さな結い髪と陰陽玉の髪飾り
     hc, hr = c.hair_surface()
     for sg in (1, -1):
