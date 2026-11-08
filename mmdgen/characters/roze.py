@@ -20,7 +20,7 @@ GOLD = (0.78, 0.62, 0.32)
 def build(out_dir):
     m = Model("束音ロゼ", "Tabane Roze", "束音ロゼ（非公式・二次創作モデル）", 165)
     c = Character(m, tex=TextureSet(out_dir), hair_color=HAIR, skin_color=(1.0, 0.86, 0.76), eye_color=(0.12, 0.62, 0.46), bust=1.12,
-                  eye=dict(yaw=0.46, pitch=-0.05, rx=0.0195, ry=0.0152, top=0.78, iris=0.47, iris_in=0.14), mouth=dict(rx=0.0090, ry=0.0009, smile=5.0))
+                  eye=dict(yaw=0.46, pitch=-0.015, rx=0.0195, ry=0.0152, top=0.78, iris=0.47, iris_in=0.14), mouth=dict(rx=0.0112, ry=0.0009, smile=5.0, pitch=-0.545, nose_pitch=-0.31))
     m.material("black", "服", BLACK, toon=0)
     m.material("red", "赤", RED, toon=0)
     m.material("red_d", "腰布", RED, double=True, toon=0)

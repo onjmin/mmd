@@ -49,7 +49,7 @@ def measure(path):
     ew = np.mean([e["x1"] - e["x0"] for e in eyes.values()])
     mid = np.vstack([mv["肌"], mv.get("服", mv["肌"])])
     mid = mid[(np.abs(mid[:, 0]) < 0.006) & (mid[:, 1] > 0.40) & (mid[:, 1] < 0.65)]
-    crotch = mid[:, 1].min()
+    crotch = mid[:, 1].min() if len(mid) else np.nan  # スカートやタイツで股が別の材質のときは測らない
     mouth_y, nose_y = mv["口"][:, 1].mean(), mv["鼻"][:, 1].mean()
     height = allv[:, 1].max()
     return {
@@ -57,16 +57,19 @@ def measure(path):
         "瞳の中心の間隔 / 目の幅": (eyes["L"]["cx"] - eyes["R"]["cx"]) / ew,
         "瞳の幅 / 目の幅": np.mean([e["iw"] for e in eyes.values()]) / ew,
         "目の高さ / 目の幅": np.mean([e["h"] for e in eyes.values()]) / ew,
-        "目の線の高さ（頭のてっぺんから / 頭の高さ）": (top - eye_y) / head,
-        "鼻（頭のてっぺんから / 頭の高さ）": (top - nose_y) / head,
-        "口（頭のてっぺんから / 頭の高さ）": (top - mouth_y) / head,
+        # 縦は隣り合う目印の区間ごとに測る（てっぺんからの位置だと短い区間のずれが埋もれる）
+        "頭のてっぺん〜目の線 / 頭の高さ": (top - eye_y) / head,
+        "目の線〜鼻 / 頭の高さ": (eye_y - nose_y) / head,
+        "鼻〜口 / 頭の高さ": (nose_y - mouth_y) / head,
+        "口〜あご先 / 頭の高さ": (mouth_y - chin) / head,
+        "口の幅 / 目の幅": np.ptp(mv["口"][:, 0]) / ew,
         "頭のてっぺん〜股 / 頭の高さ": (top - crotch) / head,
         "頭身（身長 / 頭の高さ）": height / head,
     }
 
 
 def reference(key):
-    """checklists/<キー>.md の「| 項目 | 立ち絵 | 許容 |」表を読む。"""
+    """checklists/<キー>.md の「| 項目 | 立ち絵 | ±許容（立ち絵の値に対する割合） |」表を読む。"""
     p = ROOT / "checklists" / f"{key}.md"
     ref = {}
     if p.exists():
@@ -84,8 +87,8 @@ def main(keys):
         for name, v in got.items():
             if name in ref:
                 want, tol = ref[name]
-                mark = "○" if abs(v - want) <= tol else "×"
-                print(f"  {mark} {name}: {v:.3f}（立ち絵 {want:.3f} ±{tol}）")
+                mark = "○" if abs(v - want) <= tol * want else "×"
+                print(f"  {mark} {name}: {v:.3f}（立ち絵 {want:.3f} ±{tol * 100:.0f}%、差 {(v / want - 1) * 100:+.0f}%）")
             else:
                 print(f"  - {name}: {v:.3f}")
 

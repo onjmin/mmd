@@ -168,7 +168,7 @@ class Character:
         self.bust = bust
         self.eye = dict(yaw=0.35, pitch=-0.13, rx=0.0205, ry=0.0185, top=0.85, tilt=0.0, iris=0.74, iris_in=0.0)
         self.eye.update(eye or {})
-        self.mouth = dict(rx=0.0075, ry=0.0016, smile=-0.8, open_bottom=1.0)
+        self.mouth = dict(rx=0.0075, ry=0.0016, smile=-0.8, open_bottom=1.0, pitch=-0.60, nose_pitch=-0.36)
         self.mouth.update(mouth or {})
         m = model
         m.default_toon_tex = tex.toon("toon_cloth.png", (0.80, 0.78, 0.88))
@@ -407,11 +407,11 @@ class Character:
                 m.add("blush", h.decal(cd, plane(0.020, -0.010, 0.010, s), 0.006, closed=False), m.skin_fixed("頭"))
 
         # 鼻は小さな影だけ
-        m.add("nose", h.decal(Head.dir(0.03, -0.36), ellipse_ab(0, 0, 0.0013, 0.0019), 0.010), m.skin_fixed("頭"))
+        m.add("nose", h.decal(Head.dir(0.03, self.mouth["nose_pitch"]), ellipse_ab(0, 0, 0.0013, 0.0019), 0.010), m.skin_fixed("頭"))
 
         # 口
         M = self.mouth
-        md = Head.dir(0.0, -0.60)
+        md = Head.dir(0.0, self.mouth["pitch"])
 
         def mouth(rx, ry, smile, bottom=1.0):
             return ellipse_ab(0, 0, rx, ry, top=0.35, bottom=bottom, curve=smile * 0.5)
