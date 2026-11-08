@@ -84,12 +84,12 @@ def hair(c):
     # サイドの姫毛と、その奥の緑
     for sg in (1, -1):
         for th, y_end, mat_low in [(1.08, 0.66, "hair"), (1.30, 0.60, "teal"), (1.50, 0.56, "teal")]:
-            c.drape("hair", sg * th, y_end, 0.020, pointy=False, flare=0.06,
+            c.drape("hair", sg * th, y_end, 0.020, pointy=False, flare=0.06, bones=3,
                     mats_fn=lambda p, ml=mat_low: ml if p[1] < 0.79 else "hair")
     # 後ろ髪（腰まで）
     for th in np.linspace(1.70, np.pi, 7):
         for sg in ((1, -1) if th < np.pi - 1e-3 else (1,)):
-            c.drape("hair", sg * th, 0.50, 0.034, flare=0.10, pointy=False)
+            c.drape("hair", sg * th, 0.50, 0.034, flare=0.10, pointy=False, bones=4)
     # 頭の両側の小さな結い髪と陰陽玉の髪飾り
     hc, hr = c.hair_surface()
     for sg in (1, -1):

@@ -6,7 +6,7 @@ from ..body import Character, SIDES, finish, joints
 from ..builder import Model
 from ..textures import TextureSet
 from ..geom import catmull, ellipsoid, ring, torus, tube, TAU
-from .. import parts
+from .. import parts, physics
 
 SUIT = (0.13, 0.13, 0.16)
 COAT = (0.50, 0.34, 0.22)
@@ -52,7 +52,7 @@ def build(out_dir):
             edge.append([rx * np.cos(a), y, cz + rz * np.sin(a)])
         m.add("fur", tube(edge, 0.009, n=8), torso)
     # スカート
-    m.add("skirt", parts.skirt(0.590, 0.470, 1.75, pleats=14, depth=0.10), c.skin_skirt(0.59, 0.47))
+    m.add("skirt", parts.skirt(0.590, 0.470, 1.75, pleats=14, depth=0.10), physics.skirt(c, 0.590, 0.470, 1.75))
     m.add("fur", tube(ring([0, 0.588, 0.006], [1, 0, 0], [0, 0, 1], 0.062, 0.046, 36).tolist() +
                       [ring([0, 0.588, 0.006], [1, 0, 0], [0, 0, 1], 0.062, 0.046, 36)[0].tolist()], 0.007, n=8),
           m.skin_fixed("下半身"))
@@ -92,7 +92,7 @@ def hair(c):
     t = np.linspace(0, 1, n)
     mats = ["tip" if p[1] < 0.70 else "hair" for p in path]
     c.strand(path, 0.032 * (1 - 0.85 * t ** 2) + 0.004, 0.022 * (1 - 0.8 * t ** 2) + 0.003,
-             np.tile([0, 0, 1.0], (n, 1)), mats)
+             np.tile([0, 0, 1.0], (n, 1)), mats, skin=c.hair_chain(path, 0.90, 4, 0.022))
     # 頭の上の大きなリボン
     for mesh in parts.bow([-0.060, 0.955, 0.050], 0.040, 0.026, tilt=0.55, facing=(-0.6, 0.2, 1.0)):
         m.add("bow", mesh, m.skin_fixed("頭"))

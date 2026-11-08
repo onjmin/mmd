@@ -17,6 +17,7 @@
   "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.150.1/examples/jsm/"
 } }
 </script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.150.1/examples/jsm/libs/ammo.wasm.js"></script>
 </head>
 <body>
 <div id="ui">
@@ -31,6 +32,7 @@
     <button id="side">横</button>
     <button id="back">後ろ</button>
     <button id="face">顔</button>
+    <label><input type="checkbox" id="physics" checked> 物理</label>
   </div>
   <div id="morphs"></div>
 </div>
@@ -39,6 +41,9 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { MMDLoader } from "three/addons/loaders/MMDLoader.js";
 import { OutlineEffect } from "three/addons/effects/OutlineEffect.js";
+import { MMDPhysics } from "three/addons/animation/MMDPhysics.js";
+
+const ammoReady = Ammo().then((A) => { window.Ammo = A; });
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
 renderer.setPixelRatio(devicePixelRatio);
@@ -54,7 +59,7 @@ light.position.set(-0.5, 1, 1);
 scene.add(light);
 const camera = new THREE.PerspectiveCamera(30, innerWidth / innerHeight, 0.1, 500);
 const controls = new OrbitControls(camera, renderer.domElement);
-let mesh = null, posing = false, t0 = 0;
+let mesh = null, physics = null, posing = false, t = 0;
 
 function view(name) {
   const h = mesh ? new THREE.Box3().setFromObject(mesh).max.y : 20;
@@ -69,8 +74,13 @@ function view(name) {
 
 function load(name) {
   if (mesh) scene.remove(mesh);
-  new MMDLoader().load(`../models/${name}/${name}.pmx`, (m) => {
+  physics = null;
+  new MMDLoader().load(`../models/${name}/${name}.pmx`, async (m) => {
     mesh = m;
+    await ammoReady;
+    const d = m.geometry.userData.MMD;
+    if (d.rigidBodies.length) physics = new MMDPhysics(m, d.rigidBodies, d.constraints, { unitStep: 1 / 65, maxStepNum: 3 });
+    window.physics = physics;
     scene.add(m);
     window.mesh = m;
     const box = document.getElementById("morphs");
@@ -106,7 +116,10 @@ window.view = view; window.load = load; window.camera = camera; window.controls 
 
 const clock = new THREE.Clock();
 renderer.setAnimationLoop(() => {
-  if (posing) pose(clock.getElapsedTime());
+  const dt = Math.min(clock.getDelta(), 1 / 20);
+  t += dt;
+  if (posing) pose(t);
+  if (physics && document.getElementById("physics").checked) { mesh.updateMatrixWorld(true); physics.update(dt); }
   effect.render(scene, camera);
 });
 addEventListener("resize", () => {

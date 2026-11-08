@@ -174,6 +174,8 @@ class Character:
         m.default_toon_tex = tex.toon("toon_cloth.png", (0.80, 0.78, 0.88))
         m.material("skin", "肌", skin_color, toon_tex=tex.toon("toon_skin.png", (1.0, 0.82, 0.80)))
         self._rig()
+        self._chains = 0
+        physics().body_rigids(self)
 
     # ---- ボーン ----
     def _rig(self):
@@ -469,8 +471,8 @@ class Character:
         self.strand(path, w, thick, sides, mats or mat, blunt=not pointy)
 
     def drape(self, mat, theta, y_end, width, thick=0.007, e0=1.05, flare=0.10, pointy=True,
-              scale=(1.10, 1.09, 1.10), mats_fn=None, clearance=(0.100, 0.090, 0.074), wave=0.0):
-        """頭から垂れ下がる髪の束。体（肩・胸）をよけて外側に広がる。"""
+              scale=(1.10, 1.09, 1.10), mats_fn=None, clearance=(0.100, 0.090, 0.074), wave=0.0, bones=0):
+        """頭から垂れ下がる髪の束。体（肩・胸）をよけて外側に広がる。bones を渡すと物理で揺れる。"""
         c, r = self.hair_surface(scale)
         h = np.array([np.sin(theta), 0.0, -np.cos(theta)])
         pts = []
@@ -493,7 +495,21 @@ class Character:
         w = w * (0.75 + 0.25 * smoothstep(0.0, 0.25, tt))
         sides = np.tile([np.cos(theta), 0.0, np.sin(theta)], (n, 1))
         mats = [mats_fn(p) for p in path] if mats_fn else mat
-        self.strand(path, w, thick, sides, mats, blunt=not pointy)
+        self.strand(path, w, thick, sides, mats, blunt=not pointy,
+                    skin=self.hair_chain(path, c[1] - 0.03, bones, width * 0.6) if bones else None)
+
+    def hair_chain(self, path, y_from, bones, radius, parent="頭"):
+        """path の y_from より下に揺れる骨を通し、そのウェイト関数を返す。"""
+        ph = physics()
+        self._chains += 1
+        pts = ph.resample(path, y_from, bones + 1)
+        names, _ = ph.chain(self, f"髪{self._chains}_", pts, parent, radius)
+        return ph.skin_chain(parent, names, pts)
+
+
+def physics():
+    from . import physics as ph  # physics は body を読み込むので、使うときに読む
+    return ph
 
 
 def _samples(profile_keys, band_keys, count, descending=True):

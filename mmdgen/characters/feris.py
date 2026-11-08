@@ -6,7 +6,7 @@ from ..body import Character, Head, SIDES, finish
 from ..builder import Model
 from ..textures import TextureSet
 from ..geom import catmull, ellipsoid, tube
-from .. import parts
+from .. import parts, physics
 
 HAT = (0.82, 0.38, 0.45)
 HAIR = (0.93, 0.66, 0.38)
@@ -46,7 +46,7 @@ def build(out_dir):
         strap = catmull([[s * 0.040, 0.772, -0.040], [s * 0.050, 0.796, -0.012], [s * 0.050, 0.796, 0.020],
                          [s * 0.042, 0.772, 0.044]], 12)
         m.add("top", tube(strap, 0.0055, 0.003, n=8), torso)
-    m.add("skirt", parts.skirt(0.592, 0.455, 1.85, pleats=12, depth=0.12), c.skin_skirt(0.59, 0.455))
+    m.add("skirt", parts.skirt(0.592, 0.455, 1.85, pleats=12, depth=0.12), physics.skirt(c, 0.592, 0.455, 1.85))
     for jp, en, s in SIDES:
         m.add("boot", parts.leg_tube(s, 0.120, 0.030, 1.30, steps=4), c.skin_leg(jp))
         m.add("boot", parts.foot(s, r=(0.028, 0.028, 0.064), lift=0.002), m.skin_fixed(jp + "足首"))
