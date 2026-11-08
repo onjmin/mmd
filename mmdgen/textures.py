@@ -25,14 +25,14 @@ class TextureSet:
         img.save(os.path.join(self.dir, name))
         return "tex\\" + name
 
-    # ---- トゥーン（上が光、下が影。境目をなめらかにつなぐ） ----
+    # ---- トゥーン（上が光、下が影。境目をなめらかにつなぐ正方形テクスチャ） ----
     def toon(self, name, shadow):
-        h = 64
+        h = 32
         y = np.linspace(0, 1, h)
         t = np.clip((y - 0.44) / 0.16, 0, 1)
         t = t * t * (3 - 2 * t)
         col = np.outer(1 - t, [1, 1, 1]) + np.outer(t, shadow)
-        img = np.repeat((col * 255).astype(np.uint8)[:, None, :], 32, axis=1)
+        img = np.repeat((col * 255).astype(np.uint8)[:, None, :], h, axis=1)
         return self.save(Image.fromarray(img, "RGB"), name)
 
     # ---- 髪のつや（加算スフィア：上寄りに天使の輪） ----
