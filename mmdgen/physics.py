@@ -8,7 +8,7 @@ import numpy as np
 
 from .body import SIDES, joints
 from .builder import Joint, Rigid
-from .parts import leg_at, torso_r
+from .parts import clear_legs, leg_at, torso_r
 
 BODY, HAIR, SKIRT = 0, 1, 2
 ALL = 0xFFFF
@@ -115,8 +115,7 @@ def skirt(c, y0, y1, r1_scale, cols=12, segs=3, flare_back=0.01, name="スカー
         t = (y0 - y) / (y0 - y1)
         sx = rx0 + (rx0 * r1_scale - rx0) * t
         sz = rz0 + (rx0 * r1_scale * 0.85 - rz0) * t
-        lr, lc = leg_at(y, 1.0)
-        sx, sz = max(sx, lc[0] + lr + 0.010), max(sz, lr + 0.012)
+        sx, sz = clear_legs(y, sx, sz, cz0 + flare_back * t)
         return np.array([sx * np.cos(a), y, cz0 + flare_back * t + sz * np.sin(a)])
 
     angles = np.arange(cols) / cols * 2 * np.pi

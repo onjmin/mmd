@@ -14,12 +14,12 @@ FUR = (0.95, 0.88, 0.74)
 GLOVE = (0.42, 0.20, 0.13)
 HAIR = (0.50, 0.80, 0.24)
 TIP = (0.30, 0.74, 0.72)
-BOW = (0.58, 0.22, 0.16)
+BOW = (0.38, 0.15, 0.11)
 
 
 def build(out_dir):
     m = Model("蓄音キリコ", "Chikune Kiriko", "蓄音キリコ（非公式・二次創作モデル）", 158)
-    c = Character(m, tex=TextureSet(out_dir), hair_color=HAIR, skin_color=(0.98, 0.80, 0.56), eye_color=(0.66, 0.24, 0.12), bust=0.95,
+    c = Character(m, tex=TextureSet(out_dir), hair_color=HAIR, skin_color=(0.86, 0.58, 0.36), eye_color=(0.66, 0.24, 0.12), bust=0.95,
                   mouth=dict(rx=0.0125, ry=0.0040, smile=-0.8),
                   eye=dict(yaw=0.58, h=0.45, rx=0.022, ry=0.016, top=0.80, iris=0.40, iris_in=0.14))
     m.material("suit", "インナー", SUIT, toon=0)
@@ -42,7 +42,8 @@ def build(out_dir):
     a0, a1 = np.radians(-90 + 28), np.radians(270 - 28)
     m.add("coat", parts.band_around_torso(0.800, 0.650, lambda y: 1.20 if y < 0.79 else 1.35, a0, a1, steps=8),
           torso)
-    m.add("fur", torus([0, 0.800, 0.004], [0, 1, 0], 0.046, 0.017), m.skin_auto(["上半身2", "首"]))
+    # 肩まで広がる大きなファーの襟
+    m.add("fur", torus([0, 0.792, 0.004], [0, 1, 0], 0.060, 0.024), m.skin_auto(["上半身2", "首"]))
     rx, rz, cz = parts.torso_r(0.650, 1.2)
     hem = ring([0, 0.650, cz], [1, 0, 0], [0, 0, 1], rx, rz, 40, a0, a1, closed=False)
     m.add("fur", tube(hem, 0.009, n=8, rmod=fluffy), torso)
@@ -53,7 +54,7 @@ def build(out_dir):
             edge.append([rx * np.cos(a), y, cz + rz * np.sin(a)])
         m.add("fur", tube(edge, 0.009, n=8), torso)
     # スカート
-    m.add("skirt", parts.skirt(0.590, 0.470, 1.75, pleats=14, depth=0.10), physics.skirt(c, 0.590, 0.470, 1.75))
+    m.add("skirt", parts.skirt(0.590, 0.490, 2.55, pleats=16, depth=0.08), physics.skirt(c, 0.590, 0.490, 2.55))
     m.add("fur", tube(ring([0, 0.588, 0.006], [1, 0, 0], [0, 0, 1], 0.062, 0.046, 36).tolist() +
                       [ring([0, 0.588, 0.006], [1, 0, 0], [0, 0, 1], 0.062, 0.046, 36)[0].tolist()], 0.007, n=8),
           m.skin_fixed("下半身"))
@@ -101,6 +102,6 @@ def hair(c):
         c.strand(path, 0.028 * np.sin(np.pi * np.clip(t * 0.9 + 0.1, 0, 1)) ** 0.6 + 0.004,
                  0.012 * (1 - 0.6 * t) + 0.003, np.tile([0, 0, 1.0], (n, 1)), mats,
                  skin=c.hair_chain(path, 0.92, 4, 0.020))
-    # 結び目の大きなリボン。頭の後ろから左右に輪が見える
-    for mesh in parts.bow([-0.034, 0.940, 0.066], 0.058, 0.034, tilt=0.30, facing=(-0.25, 0.1, 1.0)):
+    # 頭の上の後ろ寄りに大きなリボン。正面から見ると頭の上の左右に輪が出る（pixiv の全身絵・おんJRPG の立ち絵）
+    for mesh in parts.bow([0.0, 0.992, 0.040], 0.062, 0.038, tilt=0.20, facing=(0.0, 0.55, 1.0)):
         m.add("bow", mesh, m.skin_fixed("頭"))

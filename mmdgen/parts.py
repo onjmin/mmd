@@ -31,6 +31,17 @@ def band_around_torso(y0, y1, grow, a0=0.0, a1=TAU, steps=6, n=36, rmod=None, ex
     return loft(rings, closed=closed, centers=centers)
 
 
+def clear_legs(y, sx, sz, cz, margin=0.012):
+    """スカートの楕円 (sx, sz, 中心 z=cz) が太ももの断面を丸ごと含むまで広げる。
+    外側だけ見ると、斜め前の太ももが楕円を突き抜けてスカートに穴があく。"""
+    lr, lc = leg_at(y, 1.0)
+    th = np.linspace(0, TAU, 48, endpoint=False)
+    x = lc[0] + (lr + margin) * np.cos(th)
+    z = lc[2] - cz + (lr + margin) * np.sin(th)
+    k = np.sqrt(((x / sx) ** 2 + (z / sz) ** 2).max())
+    return (sx * k, sz * k) if k > 1 else (sx, sz)
+
+
 def skirt(y0, y1, r1_scale, pleats=12, depth=0.05, n=72, steps=6, flare_back=0.01):
     """プリーツスカート。腰回りから円錐状に広がる。"""
     rx0, rz0, cz0 = torso_r(y0, 1.06)
@@ -40,10 +51,8 @@ def skirt(y0, y1, r1_scale, pleats=12, depth=0.05, n=72, steps=6, flare_back=0.0
         sx = rx0 + (rx0 * r1_scale - rx0) * t
         sz = rz0 + (rx0 * r1_scale * 0.85 - rz0) * t
         # 太ももが突き抜けないよう、脚の外側より必ず外に出す
-        lr, lc = leg_at(y, 1.0)
-        sx = max(sx, lc[0] + lr + 0.010)
-        sz = max(sz, lr + 0.012)
         c = np.array([0, y, cz0 + flare_back * t])
+        sx, sz = clear_legs(y, sx, sz, c[2])
         dep = depth * t
         rings.append(ring(c, [1, 0, 0], [0, 0, 1], sx, sz, n,
                           rmod=lambda a, d=dep: 1 + d * np.abs(np.sin(a * pleats / 2))))
