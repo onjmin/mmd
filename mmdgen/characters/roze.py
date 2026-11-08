@@ -28,7 +28,7 @@ def build(out_dir):
     m.material("pale_d", "炎の先", PALE_PINK, double=True, toon=0)
     m.material("white", "白", (0.96, 0.95, 0.93), toon=0)
     m.material("meander", "腰布の雷文", RED, double=True, tex=c.tex.meander("meander.png", RED, (0.97, 0.95, 0.92)))
-    m.material("oj", "肩のOJ", RED, edge=False, shadow=False, tex=c.tex.mark("oj.png", "OJ", (0.80, 0.12, 0.15)),
+    m.material("oj", "肩のOJ", RED, edge=False, shadow=False, shade=1.0, tex=c.tex.mark("oj.png", "OJ", (0.80, 0.12, 0.15)),
                toon_tex=c.tex.toon("toon_flat.png", (1, 1, 1)))
     m.material("sleeve", "袖", BLACK, double=True, toon=0)
     c.hair_material("hair", "髪", HAIR)
@@ -38,14 +38,17 @@ def build(out_dir):
     m.material("jade", "髪飾り（緑）", (0.40, 0.80, 0.62), toon=0)
 
     c.build_body(torso_bands=[(1.0, "black"), (0.655, "skin"), (0.566, "black")],
-                 leg_bands=[(1.0, "black"), (0.522, "skin")], arm_bands=[(-1.0, "skin")], neck_mat="black")
+                 leg_bands=[(1.0, "black"), (0.522, "skin")], arm_bands=[(-1.0, "skin")])
     c.build_face()
 
     torso = c.skin_torso()
     # 胸元の開き・裾と襟の赤い縁取り
     m.add("skin", ellipsoid([0, 0.716, -0.052], [0.016, 0.010, 0.010]), m.skin_fixed("上半身2"))
     m.add("red", parts.band_around_torso(0.662, 0.652, 1.04, steps=2), torso)
-    m.add("red", torus([0, 0.828, 0.003], [0, 1, 0], 0.0225, 0.003), m.skin_fixed("首"))
+    # 首の下半分を覆う立て襟と、その縁の赤
+    m.add("black", tube([[0, 0.784, 0.008], [0, 0.812, 0.006], [0, 0.836, 0.004]], [0.0255, 0.0225, 0.0222], n=20),
+          m.skin_auto(["上半身2", "首"]))
+    m.add("red", torus([0, 0.836, 0.004], [0, 1, 0], 0.0222, 0.0025), m.skin_fixed("首"))
     m.add("red", tube([[0, 0.79, -0.044], [0, 0.745, -0.057]], 0.0025), m.skin_fixed("上半身2"))
     # ベルトとバックル
     m.add("black", parts.band_around_torso(0.578, 0.560, 1.07, steps=3), torso)

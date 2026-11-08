@@ -20,7 +20,7 @@ BOW = (0.58, 0.22, 0.16)
 def build(out_dir):
     m = Model("蓄音キリコ", "Chikune Kiriko", "蓄音キリコ（非公式・二次創作モデル）", 158)
     c = Character(m, tex=TextureSet(out_dir), hair_color=HAIR, skin_color=(0.98, 0.80, 0.56), eye_color=(0.66, 0.24, 0.12), bust=0.95,
-                  mouth=dict(rx=0.0085, ry=0.0055, smile=-0.6, open_bottom=1.0))
+                  mouth=dict(rx=0.0080, ry=0.0018, smile=-0.8))
     m.material("suit", "インナー", SUIT, toon=0)
     m.material("coat", "コート", COAT, double=True, toon=0)
     m.material("fur", "ファー", FUR, toon=1)
@@ -85,14 +85,14 @@ def hair(c):
         for sg in ((1, -1) if th < np.pi - 1e-3 else (1,)):
             c.drape("hair", sg * th, 0.815 if th < 1.4 else 0.800, 0.030, flare=0.0, pointy=True)
     # 右側のサイドポニー
-    base = np.array([-0.070, 0.935, 0.045])
-    path = catmull([base, [-0.100, 0.905, 0.065], [-0.112, 0.820, 0.080], [-0.104, 0.720, 0.076],
+    base = np.array([-0.070, 0.957, 0.045])
+    path = catmull([base, [-0.100, 0.925, 0.065], [-0.112, 0.835, 0.080], [-0.104, 0.720, 0.076],
                     [-0.090, 0.630, 0.062]], 24)
     n = len(path)
     t = np.linspace(0, 1, n)
     mats = ["tip" if p[1] < 0.70 else "hair" for p in path]
     c.strand(path, 0.032 * (1 - 0.85 * t ** 2) + 0.004, 0.022 * (1 - 0.8 * t ** 2) + 0.003,
-             np.tile([0, 0, 1.0], (n, 1)), mats, skin=c.hair_chain(path, 0.90, 4, 0.022))
+             np.tile([0, 0, 1.0], (n, 1)), mats, skin=c.hair_chain(path, 0.92, 4, 0.022))
     # 頭の上の大きなリボン
-    for mesh in parts.bow([-0.060, 0.955, 0.050], 0.040, 0.026, tilt=0.55, facing=(-0.6, 0.2, 1.0)):
+    for mesh in parts.bow([-0.060, 0.977, 0.050], 0.040, 0.026, tilt=0.55, facing=(-0.6, 0.2, 1.0)):
         m.add("bow", mesh, m.skin_fixed("頭"))

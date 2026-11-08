@@ -54,6 +54,7 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xe9e6ef);
 // MMD の既定照明（光源 0.6、環境色は材質側）に寄せる
 scene.add(new THREE.AmbientLight(0x000000));
+const LIGHT = 0x99 / 255;
 const light = new THREE.DirectionalLight(0x999999);
 light.position.set(-0.5, 1, 1);
 scene.add(light);
@@ -77,6 +78,15 @@ function load(name) {
   physics = null;
   new MMDLoader().load(`../models/${name}/${name}.pmx`, async (m) => {
     mesh = m;
+    // MMD 本体のテクスチャ付き材質は「テクスチャ × saturate(環境色 + 拡散色 × 光)」。
+    // three.js は環境色をテクスチャの外に足す（MMDLoader は 0.2 倍で逃げる）ので、拡散色に寄せて同じ明るさにする
+    m.material.forEach((mt) => {
+      if (!mt.map) return;
+      const amb = mt.emissive.clone().multiplyScalar(5);
+      const c = mt.color.clone().multiplyScalar(LIGHT).add(amb);
+      mt.color.setRGB(Math.min(1, c.r), Math.min(1, c.g), Math.min(1, c.b)).multiplyScalar(1 / LIGHT);
+      mt.emissive.setRGB(0, 0, 0);
+    });
     await ammoReady;
     const d = m.geometry.userData.MMD;
     if (d.rigidBodies.length) physics = new MMDPhysics(m, d.rigidBodies, d.constraints, { unitStep: 1 / 65, maxStepNum: 3 });

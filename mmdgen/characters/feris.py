@@ -22,7 +22,7 @@ def build(out_dir):
     m = Model("フェリス", "Feris", "フェリス（非公式・二次創作モデル）", 150)
     c = Character(m, tex=TextureSet(out_dir), hair_color=HAIR, skin_color=(1.0, 0.87, 0.79), eye_color=(0.88, 0.48, 0.10), bust=1.18,
                   eye=dict(rx=0.021, ry=0.025, top=0.95),
-                  mouth=dict(rx=0.010, ry=0.008, smile=-0.4, open_bottom=1.3))
+                  mouth=dict(rx=0.0085, ry=0.0020, smile=-1.0))
     m.material("top", "タンクトップ", TOP, toon=0)
     m.material("skirt", "スカート", SKIRT, double=True, toon=0)
     m.material("shorts", "インナー", SKIRT, toon=0)

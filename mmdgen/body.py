@@ -75,7 +75,7 @@ def joints(s):
 # ---------------------------------------------------------------- 頭と顔
 
 class Head:
-    def __init__(self, c=(0.0, 0.895, -0.004), r=(0.074, 0.083, 0.079)):
+    def __init__(self, c=(0.0, 0.917, -0.004), r=(0.072, 0.0805, 0.0766)):
         self.c = np.array(c, float)
         self.r = np.array(r, float)
 
@@ -187,7 +187,7 @@ class Character:
         m.add_bone("上半身", "upper body", (0, 0.590, 0.004), "グルーブ", tail="上半身2", seg_to=(0, 0.700, 0.002))
         m.add_bone("上半身2", "upper body2", (0, 0.700, 0.002), "上半身", tail="首", seg_to=(0, NECK_Y, 0.004))
         m.add_bone("首", "neck", (0, NECK_Y, 0.004), "上半身2", tail="頭", seg_to=(0, 0.845, 0.0))
-        m.add_bone("頭", "head", (0, 0.845, 0.0), "首", tail=(0, 0.08, 0), seg_to=(0, 0.95, 0.0))
+        m.add_bone("頭", "head", (0, 0.860, 0.0), "首", tail=(0, 0.08, 0), seg_to=(0, 0.97, 0.0))
         m.add_bone("両目", "eyes", (0, 1.0, -0.06), "頭", tail=(0, 0, -0.03))
         d0 = Head.dir(self.eye["yaw"], self.eye["pitch"])
         for jp, en, s in SIDES:
@@ -250,8 +250,8 @@ class Character:
         m = self.m
         h = self.head
         m.add("skin", h.mesh(), m.skin_fixed("頭"), normals=lambda v: norm((v - h.c) / h.r))  # 顔の影を球のように滑らかに
-        neck = np.array([[0, 0.785, 0.006], [0, 0.83, 0.002], [0, 0.875, 0.0]])
-        m.add(neck_mat, tube(neck, [0.022, 0.021, 0.020], n=16), m.skin_auto(["上半身2", "首", "頭"], {"頭": 1.3}))
+        neck = np.array([[0, 0.785, 0.008], [0, 0.835, 0.004], [0, 0.895, 0.002]])
+        m.add(neck_mat, tube(neck, [0.023, 0.0195, 0.019], n=16), m.skin_auto(["上半身2", "首", "頭"], {"頭": 1.3}))
 
         # 胴体
         ys = _samples([t[0] for t in TORSO], [b[0] for b in torso_bands], 34)
@@ -337,14 +337,15 @@ class Character:
         h = self.head
         E = self.eye
         T = self.tex
-        # 目や頬は陰影で灰色にならないよう、真っ白なトゥーンにする
-        noedge = dict(edge=False, shadow=False, toon_tex=T.toon("toon_flat.png", (1, 1, 1)))
+        # 目や頬は陰影で灰色にならないよう、真っ白なトゥーンと環境色 1 で描いた色そのままにする
+        noedge = dict(edge=False, shadow=False, shade=1.0, toon_tex=T.toon("toon_flat.png", (1, 1, 1)))
         m.material("eye_white", "白目", (1, 1, 1), tex=T.eye_white(), **noedge)
         m.material("iris", "瞳", self.eye_color, tex=T.iris("iris.png", self.eye_color), **noedge)
         m.material("lash", "まつ毛", (0.1, 0.06, 0.07), tex=T.lash(), **noedge)
         bc = brow_color if brow_color is not None else np.asarray(self.hair_color) * 0.6
         m.material("brow", "眉", bc, tex=T.brow("brow.png", bc), **noedge)
-        m.material("mouth", "口", closed_mouth_color, **noedge)
+        m.material("mouth", "口", closed_mouth_color, **{**noedge, "shade": 0.4})
+        m.material("nose", "鼻", np.asarray(self.skin_color) * np.array([0.90, 0.78, 0.76]), **{**noedge, "shade": 0.4})
         if blush:
             m.material("blush", "頬", (1.0, 0.5, 0.5), tex=T.blush(), **noedge)
         for name, en, panel in [("まばたき", "blink", 2), ("笑い", "smile", 2), ("ウィンク", "wink", 2),
@@ -382,7 +383,7 @@ class Character:
 
             layers = [
                 ("eye_white", plane(rx * 1.04, -0.99 * ry, 0.97 * ry * E["top"], s), 0.010, "頭"),
-                ("iris", plane(rx * 0.70, -0.95 * ry, 0.80 * ry, s, cy=-0.02 * ry), 0.016, jp + "目"),
+                ("iris", plane(rx * 0.74, -0.90 * ry, 1.00 * ry * E["top"], s), 0.016, jp + "目"),
                 ("lash", plane(rx * 1.08, -0.823 * ry, 0.995 * ry * E["top"], s), 0.022, "頭"),
             ]
             for mat, rows, off, bone in layers:
@@ -397,6 +398,9 @@ class Character:
             if blush:
                 cd = Head.dir(s * 0.56, -0.36)
                 m.add("blush", h.decal(cd, plane(0.020, -0.010, 0.010, s), 0.006, closed=False), m.skin_fixed("頭"))
+
+        # 鼻は小さな影だけ
+        m.add("nose", h.decal(Head.dir(0.03, -0.36), ellipse_ab(0, 0, 0.0013, 0.0019), 0.010), m.skin_fixed("頭"))
 
         # 口
         M = self.mouth

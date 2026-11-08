@@ -70,34 +70,31 @@ class TextureSet:
         d.ellipse([n * 0.04, n * 0.06, n * 0.96, n * 0.98], fill=_rgb((1, 1, 1)))
         shade = Image.new("RGBA", (n, n), (0, 0, 0, 0))
         ds = ImageDraw.Draw(shade)
-        ds.ellipse([n * 0.0, -n * 0.35, n * 1.0, n * 0.45], fill=_rgb((0.70, 0.74, 0.86), 150))
+        ds.ellipse([n * 0.0, -n * 0.35, n * 1.0, n * 0.30], fill=_rgb((0.80, 0.82, 0.92), 55))
         shade = shade.filter(ImageFilter.GaussianBlur(n * 0.06))
         img = Image.alpha_composite(img, Image.composite(shade, Image.new("RGBA", (n, n)), img))
         return self.save(img.resize((128, 128), Image.LANCZOS), name)
 
-    def iris(self, name, color, pupil_scale=0.42):
+    def iris(self, name, color):
+        """上（まぶたの影）が暗く下が明るい瞳。瞳孔は小さめで、光は右上に大、左下に小。"""
         n = 256 * S
         color = np.asarray(color, float)
-        img = Image.new("RGBA", (n, n), (0, 0, 0, 0))
         y, x = np.mgrid[0:n, 0:n] / (n - 1)
-        r = np.sqrt((x - 0.5) ** 2 + (y - 0.5) ** 2) / 0.5
-        dark = color * 0.30
-        light = np.clip(color * 1.35 + 0.12, 0, 1)
-        t = np.clip((y - 0.15) / 0.75, 0, 1)[..., None]
+        r = np.sqrt((x - 0.5) ** 2 + ((y - 0.5) * 1.0) ** 2) / 0.5
+        dark = color * 0.28
+        light = np.clip(color * 1.30 + 0.15, 0, 1)
+        t = np.clip((y - 0.20) / 0.70, 0, 1)[..., None] ** 1.2
         col = dark * (1 - t) + light * t
-        col = col * (1 - 0.35 * np.clip((r - 0.70) / 0.3, 0, 1))[..., None]  # 縁を暗く
-        rays = 0.06 * np.sin(np.arctan2(y - 0.5, x - 0.5) * 22) * np.clip(r - 0.35, 0, 1)
-        col = np.clip(col + rays[..., None], 0, 1)
+        col = col * (1 - 0.45 * np.clip((r - 0.82) / 0.18, 0, 1))[..., None]  # 縁だけ少し締める
+        # 下側の明るい三日月
+        glow = np.clip(1 - np.abs(r - 0.62) / 0.16, 0, 1) * np.clip((y - 0.55) / 0.3, 0, 1)
+        col = np.clip(col + glow[..., None] * 0.25 * (light - col + 0.1), 0, 1)
         alpha = np.clip((1.0 - r) * n * 0.02, 0, 1)
-        arr = np.dstack([col, alpha])
-        img = Image.fromarray((arr * 255).astype(np.uint8), "RGBA")
+        img = Image.fromarray((np.dstack([col, alpha]) * 255).astype(np.uint8), "RGBA")
         d = ImageDraw.Draw(img)
-        p = pupil_scale * n / 2
-        d.ellipse([n / 2 - p * 0.75, n / 2 - p * 0.9, n / 2 + p * 0.75, n / 2 + p * 1.1], fill=_rgb(color * 0.12))
-        d.ellipse([n * 0.10, n * 0.06, n * 0.90, n * 0.96], outline=_rgb(color * 0.18), width=int(n * 0.035))
-        # ハイライト
-        d.ellipse([n * 0.56, n * 0.18, n * 0.80, n * 0.40], fill=_rgb((1, 1, 1)))
-        d.ellipse([n * 0.26, n * 0.66, n * 0.38, n * 0.78], fill=_rgb((1, 1, 1), 220))
+        d.ellipse([n * 0.38, n * 0.33, n * 0.62, n * 0.62], fill=_rgb(color * 0.10, 235))  # 瞳孔
+        d.ellipse([n * 0.54, n * 0.16, n * 0.80, n * 0.40], fill=_rgb((1, 1, 1)))
+        d.ellipse([n * 0.24, n * 0.64, n * 0.36, n * 0.75], fill=_rgb((1, 1, 1), 210))
         return self.save(img.resize((256, 256), Image.LANCZOS), name)
 
     def lash(self, name="lash.png", color=(0.10, 0.06, 0.07)):
@@ -112,13 +109,13 @@ class TextureSet:
             a = np.pi * (0.97 - 0.92 * t)
             x = 0.5 + 0.47 * np.cos(a)
             y = 0.52 - 0.44 * np.sin(a)
-            th = 0.030 + 0.050 * t ** 1.5
+            th = 0.050 + 0.060 * t ** 1.5
             pts_top.append((x * n, (y - th * 0.3) * n))
             pts_bot.append((x * n, (y + th) * n))
         flick = [(0.99 * n, 0.36 * n), (1.0 * n, 0.44 * n), (0.95 * n, 0.52 * n)]
         d.polygon(pts_top + flick + pts_bot[::-1], fill=c)
         # 二重まぶたの線
-        d.arc([0.10 * n, 0.00 * n, 0.92 * n, 0.70 * n], 200, 330, fill=_rgb(color, 160), width=int(n * 0.012))
+        d.arc([0.14 * n, 0.00 * n, 0.90 * n, 0.62 * n], 205, 320, fill=_rgb(color, 110), width=int(n * 0.010))
         # 下まつ毛
         d.arc([0.18 * n, 0.30 * n, 0.90 * n, 0.98 * n], 25, 150, fill=_rgb(color, 200), width=int(n * 0.012))
         return self.save(img.resize((256, 256), Image.LANCZOS), name)
