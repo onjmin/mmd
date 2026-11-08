@@ -35,11 +35,11 @@ class TextureSet:
         return self.save(Image.fromarray(img, "RGB"), name)
 
     # ---- 髪のつや（加算スフィア：上寄りに細い光の帯） ----
-    def hair_sphere(self, name="hair_sphere.png", strength=0.35):
+    def hair_sphere(self, name="hair_sphere.png", strength=0.55):
         n = 256
         y, x = np.mgrid[0:n, 0:n] / (n - 1) * 2 - 1
         r = np.sqrt(x * x + y * y)
-        band = np.exp(-((r - 0.62) / 0.07) ** 2) * np.clip(-y + 0.15, 0, 1) ** 0.7
+        band = np.exp(-((r - 0.62) / 0.10) ** 2) * np.clip(-y + 0.15, 0, 1) ** 0.7
         v = (band * strength * 255).astype(np.uint8)
         return self.save(Image.fromarray(np.stack([v, v, v], -1), "RGB"), name)
 
@@ -50,7 +50,7 @@ class TextureSet:
         u = np.linspace(0, 1, w)
         stripe = np.zeros(w)
         for _ in range(28):
-            c, s, a = rng.uniform(0, 1), rng.uniform(0.004, 0.02), rng.uniform(-0.10, 0.12)
+            c, s, a = rng.uniform(0, 1), rng.uniform(0.004, 0.02), rng.uniform(-0.16, 0.22)
             stripe += a * np.exp(-((u - c) / s) ** 2)
         stripe += 0.015 * np.cos(u * np.pi * 2)  # 束の端をごく少し暗く
         v = np.linspace(0, 1, h)
