@@ -20,7 +20,7 @@ GOLD = (0.78, 0.62, 0.32)
 def build(out_dir):
     m = Model("束音ロゼ", "Tabane Roze", "束音ロゼ（非公式・二次創作モデル）", 165)
     c = Character(m, tex=TextureSet(out_dir), hair_color=HAIR, skin_color=(1.0, 0.86, 0.76), eye_color=(0.12, 0.62, 0.46), bust=1.12,
-                  eye=dict(yaw=0.45, rx=0.0205, ry=0.0160, top=0.78, iris=0.62), mouth=dict(rx=0.0090, ry=0.0009, smile=5.0))
+                  eye=dict(yaw=0.46, pitch=-0.05, rx=0.0195, ry=0.0152, top=0.78, iris=0.47, iris_in=0.14), mouth=dict(rx=0.0090, ry=0.0009, smile=5.0))
     m.material("black", "服", BLACK, toon=0)
     m.material("red", "赤", RED, toon=0)
     m.material("red_d", "腰布", RED, double=True, toon=0)
@@ -148,7 +148,7 @@ def hair(c):
     rng = np.random.default_rng(7)  # 束ごとに太さと長さを少しずつ変え、筋がそろって見えないようにする
     # 姫カットの前髪：隣と重なる幅にして、毛先の高さを少し乱す
     for th in np.linspace(-0.66, 0.66, 11):
-        c.bang("hair", th + rng.uniform(-0.03, 0.03), 0.07 + rng.uniform(-0.025, 0.025), 0.026 * rng.uniform(0.85, 1.2),
+        c.bang("hair", th + rng.uniform(-0.03, 0.03), 0.15 + rng.uniform(-0.025, 0.025), 0.026 * rng.uniform(0.85, 1.2),
                thick=0.009, e_start=1.25, pointy=False, lift_end=1.12)
     # 頬の横に細く垂れる髪（顔の幅を隠さないよう、頬の端に沿わせる）
     for sg in (1, -1):

@@ -4,6 +4,8 @@ import struct
 import sys
 from collections import Counter
 
+import numpy as np
+
 
 class Reader:
     def __init__(self, data):
@@ -36,8 +38,9 @@ def read(path):
 
     nv = r.take("i")
     wtypes = Counter()
+    pos = []
     for _ in range(nv):
-        r.take("8f")
+        pos.append(r.take("8f")[:3])
         if adduv:
             r.take(f"{4 * adduv}f")
         w = r.take("B")
@@ -54,6 +57,8 @@ def read(path):
     info["vertices"] = nv
     info["weight_types"] = dict(wtypes)
     nf = r.take("i")
+    info["positions"] = np.array(pos)
+    info["indices"] = np.frombuffer(r.d[r.o:r.o + nf * vs], {1: "<u1", 2: "<u2", 4: "<i4"}[vs]).astype(np.int64)
     r.o += nf * vs
     info["faces"] = nf // 3
 
