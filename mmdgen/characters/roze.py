@@ -2,10 +2,10 @@
 
 import numpy as np
 
-from ..body import ARM_ANGLE, Character, Head, SIDES, finish, joints
+from ..body import ARM_ANGLE, Character, Head, SIDES, finish, joints, _flat_loft
 from ..builder import Model
 from ..textures import TextureSet
-from ..geom import MeshData, catmull, ellipsoid, loft, ring, torus, tube, TAU
+from ..geom import MeshData, catmull, ellipsoid, loft, ring, rot_axes, torus, tube, TAU
 from .. import parts, physics
 
 BLACK = (0.15, 0.14, 0.17)
@@ -16,12 +16,15 @@ HAIR = (0.19, 0.19, 0.24)  # 立ち絵の黒髪は灰色寄りでつやがある
 TEAL = (0.16, 0.66, 0.56)
 GOLD = (0.78, 0.62, 0.32)
 
+# 胸元の横長キーホール開口の中心・半径（胸の上斜面〜谷間が見える位置。巨乳の頂点 y=0.702 はこの下の黒い服の中に入る）
+KH_YC, KH_RX, KH_RY = 0.746, 0.036, 0.0115
+
 
 def build(out_dir):
     m = Model("束音ロゼ", "Tabane Roze", "束音ロゼ（非公式・二次創作モデル）", 165)
-    c = Character(m, tex=TextureSet(out_dir), hair_color=HAIR, skin_color=(1.0, 0.86, 0.76), eye_color=(0.12, 0.62, 0.46), bust=1.12,
-                  eye=dict(yaw=0.578, h=0.453, rx=0.0244, ry=0.0180, top=0.78, iris=0.42, iris_in=0.12),
-                  mouth=dict(rx=0.0118, ry=0.0009, smile=5.0, h=0.145, nose_h=0.28))
+    c = Character(m, tex=TextureSet(out_dir), hair_color=HAIR, skin_color=(1.0, 0.86, 0.76), eye_color=(0.12, 0.62, 0.46), bust=1.24,
+                  eye=dict(yaw=0.575, h=0.450, rx=0.0240, ry=0.0176, top=0.80, iris=0.45, iris_in=0.14),
+                  mouth=dict(rx=0.0115, ry=0.0009, smile=5.0, h=0.140, nose_h=0.275))
     m.material("black", "服", BLACK, toon=0)
     m.material("red", "赤", RED, toon=0)
     m.material("red_d", "腰布", RED, double=True, toon=0)
@@ -31,8 +34,11 @@ def build(out_dir):
                tex=c.tex.flame("flame.png", (0.90, 0.30, 0.45), PINK, PALE_PINK))
     m.material("white", "白", (0.96, 0.95, 0.93), toon=0)
     m.material("meander", "腰布の雷文", RED, double=True, tex=c.tex.meander("meander.png", RED, (0.97, 0.95, 0.92)))
-    m.material("oj", "肩のOJ", RED, edge=False, shadow=False, shade=1.0, tex=c.tex.mark("oj.png", "OJ", (0.80, 0.12, 0.15)),
-               toon_tex=c.tex.toon("toon_flat.png", (1, 1, 1)))
+    noedge = dict(edge=False, shadow=False, shade=1.0, toon_tex=c.tex.toon("toon_flat.png", (1, 1, 1)))
+    m.material("oj", "肩のOJ", RED, tex=c.tex.mark("oj.png", "OJ", (0.80, 0.12, 0.15)), **noedge)
+    m.material("buckle", "バックル", (1, 1, 1), tex=c.tex.buckle("buckle.png"), **noedge)
+    m.material("cleavage", "谷間", (1.0, 0.86, 0.76), tex=c.tex.nose("nose.png", (1.0, 0.86, 0.76)), **noedge)
+    m.material("yinyang", "陰陽玉", (1, 1, 1), tex=c.tex.yinyang("yinyang.png", (0.40, 0.80, 0.62), (0.96, 0.95, 0.93)), toon=0)
     m.material("sleeve", "袖", BLACK, double=True, toon=0)
     c.hair_material("hair", "髪", HAIR)
     c.hair_material("teal", "髪（内側）", TEAL)
@@ -40,34 +46,64 @@ def build(out_dir):
     m.material("gray", "ヘッドセット", (0.32, 0.32, 0.36), toon=0)
     m.material("jade", "髪飾り（緑）", (0.40, 0.80, 0.62), toon=0)
 
-    c.build_body(torso_bands=[(1.0, "skin"), (0.730, "black"), (0.655, "skin"), (0.566, "black")],
+    # 胴体メッシュ自体で胸元の横長開口・袖ぐり・黒いチャイナ服を切り分ける（2重メッシュの突き抜けや脇の隙間がゼロになる）
+    c.build_body(torso_bands=[(1.0, "black"), (0.655, "skin"), (0.566, "black")],
                  leg_bands=[(1.0, "black"), (0.538, "skin")], arm_bands=[(-1.0, "skin")],
-                 leg_cut=(0.538, 0.030))
+                 leg_cut=(0.538, 0.030),
+                 torso_mat_fn=roze_torso_mat, torso_snap_fn=lambda r_pts, y, angs: roze_torso_snap(c, r_pts, y, angs))
     c.build_face()
 
     torso = c.skin_torso()
-    # 胸から上の身ごろ：前と後ろだけを覆い、肩は出す（袖ぐりは首の付け根からわきへ下りる線）
-    for sg in (-1, 1):
-        m.add("black", halter(sg), torso)
-    # 襟のすぐ下の横長の開き・縁取りと、裾の赤い縁取り
-    m.add("skin", ellipsoid([0, 0.726, -0.051], [0.035, 0.014, 0.013], nu=24, nv=14), m.skin_fixed("上半身2"))
-    kh_a = np.linspace(0, TAU, 29)
-    kh_pts = [[0.034 * np.cos(a), 0.726 + 0.0135 * np.sin(a), -torso_z(0.726 + 0.0135 * np.sin(a)) - 0.0028] for a in kh_a]
-    m.add("red", tube(kh_pts, 0.0022, n=8), m.skin_fixed("上半身2"))
-    m.add("red", parts.band_around_torso(0.662, 0.652, 1.04, steps=2), torso)
+
+    # 胸元の開口から見える谷間の縦影ライン（立体的な谷間の底に淡い肌影を添える）
+    cl_x = np.linspace(-0.0024, 0.0024, 5)
+    cl_y = np.linspace(KH_YC + KH_RY * 0.85, KH_YC - KH_RY * 0.85, 7)
+    cl_rings = [c.torso_point_xy(cl_x, np.full_like(cl_x, yy), sg=-1, offset=0.0004) for yy in cl_y]
+    m.add("cleavage", _flat_loft(cl_rings, np.array([0.0, 0.0, -1.0]), closed=False), m.skin_fixed("上半身2"))
+
+    # 胸元の横長開口の赤いパイピング縁取り（胸と谷間の3D曲面に隙間なく密着させる）
+    kh_a = np.linspace(0, TAU, 49)
+    kh_pts = c.torso_point_xy(KH_RX * np.cos(kh_a), KH_YC + KH_RY * np.sin(kh_a), sg=-1, offset=0.0008)
+    m.add("red", tube(kh_pts, 0.0022, n=10), m.skin_fixed("上半身2"))
+
+    # 袖ぐりの赤いパイピング縁取り（前〜脇の下〜後ろを1本の滑らかなU字ループでつなぐ）と、赤いアンダーバスト帯
+    for s in (1, -1):
+        ah_y_f = np.linspace(0.838, 0.735, 16)
+        ah_y_b = np.linspace(0.735, 0.838, 16)[1:]
+        pts_f = c.torso_point_xy(s * armhole_x(ah_y_f), ah_y_f, sg=-1, offset=0.0008)
+        pts_b = c.torso_point_xy(s * armhole_x(ah_y_b), ah_y_b, sg=1, offset=0.0008)
+        m.add("red", tube(np.vstack([pts_f, pts_b]), 0.0018, n=8), torso)
+    ub_angs = np.arange(64) / 64 * TAU
+    ub_rings = [c.torso_ring_point(y, ub_angs, offset=0.0014) for y in (0.661, 0.656, 0.652)]
+    m.add("red", loft(ub_rings, cap0=True, cap1=True, centers=[[0, 0.661, 0], [0, 0.656, 0], [0, 0.652, 0]]), torso)
+
     # 首の下半分を覆う立て襟と、その縁の赤
     m.add("black", tube([[0, 0.784, 0.008], [0, 0.815, 0.006], [0, 0.846, 0.004]], [0.0255, 0.0225, 0.0218], n=20),
           m.skin_auto(["上半身2", "首"]))
     m.add("red", torus([0, 0.846, 0.004], [0, 1, 0], 0.0218, 0.0025), m.skin_fixed("首"))
-    # 襟の金ボタンと、胸の上の赤い飾り結び 2 本
+    # 襟の金ボタン、中央の赤い縦ライン、胸の上の赤い飾り結び 2 本
     m.add("gold", ellipsoid([0, 0.828, -0.0235], [0.0035] * 3, nu=10, nv=6), m.skin_fixed("首"))
-    for y in (0.772, 0.756):
-        z = -torso_z(y)
-        m.add("red", tube([[-0.014, y, z + 0.004], [0, y - 0.001, z], [0.014, y, z + 0.004]], 0.0022, n=6),
-              m.skin_fixed("上半身2"))
-    # ベルトとバックル
-    m.add("black", parts.band_around_torso(0.578, 0.560, 1.07, steps=3), torso)
-    m.add("gold", ellipsoid([0, 0.569, -0.052], [0.016, 0.011, 0.004]), m.skin_fixed("下半身"))
+    v_top_y = np.linspace(0.786, KH_YC + KH_RY, 6)
+    m.add("red", tube(c.torso_point_xy(np.zeros_like(v_top_y), v_top_y, sg=-1, offset=0.0012), 0.0015, n=6), m.skin_fixed("上半身2"))
+    for y in (0.775, 0.764):
+        fx = np.linspace(-0.015, 0.015, 9)
+        fy = y - 0.0008 * (1.0 - (fx / 0.015) ** 2)
+        m.add("red", tube(c.torso_point_xy(fx, fy, sg=-1, offset=0.0014), 0.0019, n=8), m.skin_fixed("上半身2"))
+
+    # ベルト（体に沿わせて隙間をなくす）と、雲模様の彫りが入った四角い金バックル
+    belt_rings = [c.torso_ring_point(y, ub_angs, offset=0.0028) for y in np.linspace(0.578, 0.560, 4)]
+    m.add("black", loft(belt_rings, cap0=True, cap1=True, centers=[[0, y, 0.005] for y in np.linspace(0.578, 0.560, 4)]), torso)
+    bx = np.linspace(-0.018, 0.018, 9)
+    by = np.linspace(0.580, 0.558, 7)
+    b_front = [c.torso_point_xy(bx, np.full_like(bx, yy), sg=-1, offset=0.0052) for yy in by]
+    m.add("buckle", _flat_loft(b_front, np.array([0.0, 0.0, -1.0]), closed=False), m.skin_fixed("下半身"))
+    b_rim_pts = np.vstack([
+        c.torso_point_xy(bx, np.full_like(bx, 0.580), sg=-1, offset=0.0046),
+        c.torso_point_xy(np.full_like(by, 0.018), by, sg=-1, offset=0.0046),
+        c.torso_point_xy(bx[::-1], np.full_like(bx, 0.558), sg=-1, offset=0.0046),
+        c.torso_point_xy(np.full_like(by, -0.018), by[::-1], sg=-1, offset=0.0046),
+    ])
+    m.add("gold", tube(b_rim_pts, 0.0014, n=6), m.skin_fixed("下半身"))
 
     for jp, en, s in SIDES:
         arm = c.skin_arm(jp)
@@ -113,22 +149,43 @@ def build(out_dir):
     return m
 
 
-def torso_z(y):
-    rx, rz, cz = parts.torso_r(y)
-    return rz - cz
+def armhole_x(y):
+    """肩出しチャイナ服の袖ぐり（y=0.735 の脇の下 rx から y=0.840 の首元へ滑らかに絞る半幅）。"""
+    y_arr = np.asarray(y, float)
+    rx, _, _ = parts.torso_r(y_arr)
+    xc = np.interp(y_arr, [0.735, 0.760, 0.795, 0.822, 0.840], [0.080, 0.065, 0.048, 0.035, 0.028])
+    return np.minimum(xc, rx)
 
 
-def halter(sg, n=24):
-    """胸から上の身ごろの前（sg=-1）か後ろ（sg=1）。胴の輪の、袖ぐりの線より内側の弧をつなぐ。"""
-    rings, centers = [], []
-    for y in np.linspace(0.724, 0.840, 18):
-        rx, rz, cz = parts.torso_r(y, 1.028)
-        xc = min(np.interp(y, [0.724, 0.760, 0.800, 0.825, 0.840], [0.072, 0.066, 0.052, 0.036, 0.030]), rx * 0.999)
-        a0 = np.arccos(xc / rx)
-        a = np.linspace(a0, np.pi - a0, n)
-        rings.append(np.stack([rx * np.cos(a), np.full(n, y), cz + sg * rz * np.sin(a)], 1))
-        centers.append([0, y, cz])
-    return loft(rings, closed=False, centers=centers)
+def roze_torso_snap(c, r_pts, y, angs):
+    """胴体メッシュの頂点を胸元の開口楕円と袖ぐりの境界線上にスナップし、境界のギザギザを無くす。"""
+    pts = r_pts.copy()
+    sa = np.sin(angs)
+    if abs(y - KH_YC) < KH_RY:
+        x_kh = KH_RX * np.sqrt(max(0.0, 1.0 - ((y - KH_YC) / KH_RY) ** 2))
+        for s in (-1.0, 1.0):
+            front_idx = np.nonzero(sa < -0.15)[0]
+            best = front_idx[np.argmin(np.abs(pts[front_idx, 0] - s * x_kh))]
+            pts[best] = c.torso_point_xy(s * x_kh, y, sg=-1)
+    if y > 0.735:
+        x_ah = float(armhole_x(y))
+        for s in (-1.0, 1.0):
+            for sg, mask in ((-1, sa <= 0), (1, sa > 0)):
+                side_idx = np.nonzero(mask)[0]
+                best = side_idx[np.argmin(np.abs(pts[side_idx, 0] - s * x_ah))]
+                pts[best] = c.torso_point_xy(s * x_ah, y, sg=sg)
+    return pts
+
+
+def roze_torso_mat(c_pt, base_mat):
+    """胴体メッシュの三角形ごとに、胸元のキーホール開口と肩出し部分を『肌』に切り替える。"""
+    x, y, z = c_pt
+    if base_mat == "black" and y > 0.655:
+        if z < 0 and ((x / KH_RX) ** 2 + ((y - KH_YC) / KH_RY) ** 2) < 1.0:
+            return "skin"
+        if y > 0.735 and abs(x) > float(armhole_x(y)):
+            return "skin"
+    return base_mat
 
 
 def balloon_sleeve(s, t0=0.09, t1=0.258, n=22):
@@ -178,16 +235,25 @@ def shoulder_mark(s, t=0.045, w=0.014, h=0.008, r=0.0275):
 def hair(c):
     m = c.m
     c.hair_cap("hair")
-    rng = np.random.default_rng(7)  # 束ごとに太さと長さを少しずつ変え、筋がそろって見えないようにする
-    # 姫カットの前髪：太さと毛先の高さをばらし、束どうしの間にすき間が見えるようにする
-    for th in np.linspace(-0.66, 0.66, 12):
-        c.bang("hair", th + rng.uniform(-0.025, 0.025), 0.15 + rng.uniform(-0.05, 0.05), 0.021 * rng.uniform(0.8, 1.2),
-               thick=0.009, e_start=1.25, pointy=False, lift_end=1.12)
+    rng = np.random.default_rng(7)
+    # 姫カットの前髪：額にすっきり沿う薄い平板状の束をそろえ、立ち絵と同じ位置に繊細なスリットを入れる
+    bang_specs = [
+        (-0.64, 0.18, 0.020),
+        (-0.50, 0.19, 0.022),
+        (-0.34, 0.20, 0.020),
+        (-0.17, 0.20, 0.022),
+        (-0.02, 0.20, 0.022),
+        ( 0.14, 0.20, 0.022),
+        ( 0.30, 0.20, 0.020),
+        ( 0.48, 0.19, 0.022),
+        ( 0.63, 0.18, 0.020),
+    ]
+    for th, e_end, w in bang_specs:
+        c.bang("hair", th, e_end, w, thick=0.0040, e_start=1.25, pointy=False, lift_end=1.045)
     # こめかみ〜頬の横に垂れる姫毛（前髪と横髪のすき間を埋め、あごの高さまで下ろす）
     for sg in (1, -1):
-        for th, e_end, w in [(0.76, -0.25, 0.015), (0.86, -0.66, 0.014), (0.96, -0.74, 0.013), (1.08, -0.45, 0.016)]:
-            c.bang("hair", sg * th, e_end + rng.uniform(-0.03, 0.03), w, thick=0.005, e_start=1.25, pointy=True,
-                   lift_end=1.04)
+        for th, e_end, w in [(0.76, -0.22, 0.015), (0.86, -0.62, 0.014), (0.96, -0.72, 0.013), (1.08, -0.45, 0.016)]:
+            c.bang("hair", sg * th, e_end, w, thick=0.0045, e_start=1.25, pointy=True, lift_end=1.038)
     # 結い髪から下がる左右の房：玉の下から外へ張り出し、あごの下で外へはねる。1〜2 本は胸まで、奥の緑は腰まで
     hc, hr = c.hair_surface()
     for sg in (1, -1):
@@ -230,10 +296,12 @@ def hair(c):
                            base + np.array([sg * (0.03 + dx), 0.045 - k * 0.012, 0.01])], 10)
             m.add("hair", tube(ant, np.linspace(0.0035, 0.0008, len(ant)), n=6), m.skin_fixed("頭"))
         orb = base + d * 0.015
-        m.add("jade", ellipsoid(orb, [0.0180] * 3, keep=lambda q, sg=sg: q[:, 0] * sg >= -0.05, nu=16, nv=10),
-              m.skin_fixed("頭"))
-        m.add("white", ellipsoid(orb, [0.0178] * 3, keep=lambda q, sg=sg: q[:, 0] * sg <= 0.05, nu=16, nv=10),
-              m.skin_fixed("頭"))
+        orb_mesh = ellipsoid(orb, [0.0175, 0.0175, 0.0155], nu=24, nv=16)
+        orb_uv = np.column_stack([
+            (orb_mesh[0][:, 0] - orb[0]) * sg / 0.035 + 0.5,
+            0.5 - (orb_mesh[0][:, 1] - orb[1]) / 0.035,
+        ])
+        m.add("yinyang", orb_mesh, m.skin_fixed("頭"), uv=np.clip(orb_uv, 0.02, 0.98))
     # ヘッドセット（左耳）とマイク
     ear = c.head.c + np.array([c.head.r[0] + 0.006, -0.012, 0.004])  # 頭の横幅に沿わせる
     m.add("gray", ellipsoid(ear, [0.007, 0.016, 0.014]), m.skin_fixed("頭"))

@@ -2,12 +2,12 @@
 
 import numpy as np
 
-from .body import ARM, LEG, TORSO, arm_dir, joints, ARM_ANGLE
+from .body import ARM, LEG, TORSO, arm_dir, joints, torso_profile, ARM_ANGLE
 from .geom import ellipsoid, loft, ring, rot_axes, torus, tube, TAU
 
 
 def torso_r(y, grow=1.0):
-    rx, rz, cz = (np.interp(-y, [-t[0] for t in TORSO], [t[k] for t in TORSO]) for k in (1, 2, 3))
+    rx, rz, cz = torso_profile(y, 1.0)
     return rx * grow, rz * grow, cz
 
 
