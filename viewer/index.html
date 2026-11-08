@@ -148,6 +148,10 @@ function setupCompare(name) {
     controls.target.set(0, h * 0.5, 0);
     camera.position.set(0, h * 0.5, h * 0.53 / Math.tan(fov / 2));
   }
+  // yaw=度 で見る向きを回す（90 で横顔、45 で斜め）。正面の比較だけでは横顔の崩れに気づけない
+  const yaw = +(Q.get("yaw") ?? 0) * Math.PI / 180;
+  const off = camera.position.clone().sub(controls.target);
+  camera.position.copy(controls.target).add(off.applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw));
   controls.update();
 }
 

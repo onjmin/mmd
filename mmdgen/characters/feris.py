@@ -21,8 +21,8 @@ BOOT = (0.66, 0.32, 0.22)
 def build(out_dir):
     m = Model("フェリス", "Feris", "フェリス（非公式・二次創作モデル）", 150)
     c = Character(m, tex=TextureSet(out_dir), hair_color=HAIR, skin_color=(1.0, 0.87, 0.79), eye_color=(0.88, 0.48, 0.10), bust=1.18,
-                  eye=dict(rx=0.0215, ry=0.0205, top=0.92),
-                  mouth=dict(rx=0.0085, ry=0.0020, smile=-1.0))
+                  eye=dict(yaw=0.60, h=0.44, rx=0.0205, ry=0.0175, top=0.92, iris=0.26, iris_in=0.10),
+                  mouth=dict(rx=0.0140, ry=0.0055, smile=-1.0))
     m.material("top", "タンクトップ", TOP, toon=0)
     m.material("skirt", "スカート", SKIRT, double=True, toon=0)
     m.material("shorts", "インナー", SKIRT, toon=0)
