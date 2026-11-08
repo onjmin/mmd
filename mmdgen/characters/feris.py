@@ -52,9 +52,7 @@ def build(out_dir):
     torso = c.skin_torso()
     # 肩ひも
     for jp, en, s in SIDES:
-        strap = catmull([[s * 0.040, 0.772, -0.040], [s * 0.050, 0.796, -0.012], [s * 0.050, 0.796, 0.020],
-                         [s * 0.042, 0.772, 0.044]], 12)
-        m.add("top", tube(strap, 0.0055, 0.003, n=8), torso)
+        m.add("top", tube(strap(s * 0.046, 0.772), 0.0055, 0.003, n=8), torso)
     for jp, en, s in SIDES:
         # 白いハイソックスと赤い靴
         m.add("shoe", parts.leg_tube(s, 0.060, 0.030, 1.20, steps=3), c.skin_leg(jp))
@@ -111,6 +109,18 @@ def hat(c):
             path = catmull([root, (root + tip) / 2 + np.array([0, 0.005, 0]), tip], 10)
             w = np.linspace(0.009, 0.002, len(path))
             c.strand(path, w, 0.003, np.tile([0, 1.0, 0], (len(path), 1)), "feather", skin=m.skin_fixed("頭"))
+
+
+def strap(x, y0, off=0.0035):
+    """肩ひも：x の縦の断面で胴の表面に沿い、前の y0 から肩を越えて後ろの y0 まで回る。"""
+    ys = np.linspace(y0, 0.826, 40)
+    rx, rz, cz = parts.torso_r(ys)
+    ys, rz, cz, rx = ys[rx > abs(x) + 0.004], rz[rx > abs(x) + 0.004], cz[rx > abs(x) + 0.004], rx[rx > abs(x) + 0.004]
+    d = rz * np.sqrt(1 - (x / rx) ** 2) + off
+    top = [[x, ys[-1] + 0.6 * d[-1], cz[-1]]]
+    front = [[x, y, c - dd] for y, c, dd in zip(ys, cz, d)]
+    back = [[x, y, c + dd] for y, c, dd in zip(ys, cz, d)][::-1]
+    return catmull(front[::4] + top + back[::4], 6)
 
 
 def chest_mark(pos, y, w, h, off=0.004):
