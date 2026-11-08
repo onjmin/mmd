@@ -20,7 +20,7 @@ GOLD = (0.78, 0.62, 0.32)
 def build(out_dir):
     m = Model("束音ロゼ", "Tabane Roze", "束音ロゼ（非公式・二次創作モデル）", 165)
     c = Character(m, tex=TextureSet(out_dir), hair_color=HAIR, skin_color=(1.0, 0.86, 0.76), eye_color=(0.12, 0.62, 0.46), bust=1.12,
-                  eye=dict(yaw=0.575, h=0.453, rx=0.0235, ry=0.0185, top=0.78, iris=0.39, iris_in=0.14), mouth=dict(rx=0.0118, ry=0.0009, smile=5.0, h=0.145, nose_h=0.28))
+                  eye=dict(yaw=0.585, h=0.453, rx=0.0248, ry=0.0185, top=0.78, iris=0.39, iris_in=0.14), mouth=dict(rx=0.0118, ry=0.0009, smile=5.0, h=0.145, nose_h=0.28))
     m.material("black", "服", BLACK, toon=0)
     m.material("red", "赤", RED, toon=0)
     m.material("red_d", "腰布", RED, double=True, toon=0)
@@ -49,11 +49,11 @@ def build(out_dir):
     m.add("skin", ellipsoid([0, 0.726, -0.052], [0.036, 0.015, 0.012]), m.skin_fixed("上半身2"))
     m.add("red", parts.band_around_torso(0.662, 0.652, 1.04, steps=2), torso)
     # 首の下半分を覆う立て襟と、その縁の赤
-    m.add("black", tube([[0, 0.784, 0.008], [0, 0.812, 0.006], [0, 0.836, 0.004]], [0.0255, 0.0225, 0.0222], n=20),
+    m.add("black", tube([[0, 0.784, 0.008], [0, 0.815, 0.006], [0, 0.846, 0.004]], [0.0255, 0.0225, 0.0218], n=20),
           m.skin_auto(["上半身2", "首"]))
-    m.add("red", torus([0, 0.836, 0.004], [0, 1, 0], 0.0222, 0.0025), m.skin_fixed("首"))
+    m.add("red", torus([0, 0.846, 0.004], [0, 1, 0], 0.0218, 0.0025), m.skin_fixed("首"))
     # 襟の金ボタンと、胸の上の赤い飾り結び 2 本
-    m.add("gold", ellipsoid([0, 0.822, -0.0235], [0.0035] * 3, nu=10, nv=6), m.skin_fixed("首"))
+    m.add("gold", ellipsoid([0, 0.828, -0.0235], [0.0035] * 3, nu=10, nv=6), m.skin_fixed("首"))
     for y in (0.772, 0.756):
         z = -torso_z(y)
         m.add("red", tube([[-0.014, y, z + 0.004], [0, y - 0.001, z], [0.014, y, z + 0.004]], 0.0022, n=6),

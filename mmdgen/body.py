@@ -94,7 +94,7 @@ class Head:
     """頭（肌の面）。高さごとの断面を、前後で半径の違う楕円に鼻の出っ張りを足した形でつなぐ。
     r は髪の面を置くための大きさの目安（楕円体の半径）として残している。"""
 
-    def __init__(self, chin_y=0.856, height=0.148, z=-0.004, flat=3.4):
+    def __init__(self, chin_y=0.856, height=0.148, z=-0.004, flat=2.7):
         self.H, self.y0, self.flat = height, chin_y, flat
         f, b = max(HEAD_F), max(HEAD_B)
         self.zc = z - (b - f) / 2 * height  # 前後のいちばん出た所の真ん中を z に合わせる
