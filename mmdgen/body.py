@@ -14,14 +14,14 @@ NECK_Y = 0.805
 TORSO = [  # y, rx, rz, cz（cz は +Z = 背中側へのずれ）
     (0.808, 0.024, 0.022, 0.002),
     (0.800, 0.046, 0.032, 0.004),
-    (0.792, 0.068, 0.038, 0.004),
-    (0.780, 0.081, 0.043, 0.004),
+    (0.792, 0.062, 0.038, 0.004),
+    (0.780, 0.077, 0.043, 0.004),
     (0.762, 0.080, 0.046, 0.002),
     (0.735, 0.074, 0.050, 0.000),
     (0.700, 0.068, 0.050, 0.000),
     (0.660, 0.059, 0.044, 0.002),
-    (0.620, 0.053, 0.040, 0.004),
-    (0.590, 0.055, 0.041, 0.004),
+    (0.620, 0.050, 0.039, 0.004),
+    (0.590, 0.053, 0.040, 0.004),
     (0.555, 0.069, 0.048, 0.006),
     (0.520, 0.075, 0.050, 0.008),
     (0.495, 0.068, 0.046, 0.008),
@@ -245,8 +245,9 @@ class Character:
         return f
 
     # ---- 体 ----
-    def build_body(self, torso_bands, leg_bands, arm_bands, neck_mat="skin", hand_mat="skin"):
-        """bands: [(境目, 材質)]。torso/leg は y（上から）、arm は腕の付け根からの距離。"""
+    def build_body(self, torso_bands, leg_bands, arm_bands, neck_mat="skin", hand_mat="skin", leg_cut=None):
+        """bands: [(境目, 材質)]。torso/leg は y（上から）、arm は腕の付け根からの距離。
+        leg_cut=(y, 高さ) で、脚の y の境目を外側ほど持ち上げる（ショーツの脚の切れ込み）。"""
         m = self.m
         h = self.head
         m.add("skin", h.mesh(), m.skin_fixed("頭"), normals=lambda v: norm((v - h.c) / h.r))  # 顔の影を球のように滑らかに
@@ -278,7 +279,13 @@ class Character:
             for y in ys:
                 r, x, z = (np.interp(-y, [-t[0] for t in LEG], [t[k] for t in LEG]) for k in (1, 2, 3))
                 c = np.array([s * x, y, z])
-                rings.append(ring(c, [1, 0, 0], [0, 0, 1], r, r * 1.02, 22))
+                pts = ring(c, [1, 0, 0], [0, 0, 1], r, r * 1.02, 22)
+                if leg_cut:
+                    # 境目のまわり ±0.04 だけを、外側ほど上へずらす（輪どうしは交差しない）
+                    bump = max(0.0, 1 - abs(y - leg_cut[0]) / 0.04)
+                    side = np.clip((pts[:, 0] - c[0]) * s / r, 0, 1) ** 0.7
+                    pts[:, 1] += leg_cut[1] * bump * side
+                rings.append(pts)
                 centers.append(c)
             self._banded(rings, centers, ys, leg_bands, self.skin_leg(jp), cap1=True, descending=True)
 
@@ -382,7 +389,7 @@ class Character:
                 return [np.stack([r[:, 0], r[:, 1] + tilt * r[:, 0] * s], 1) for r in rows]
 
             layers = [
-                ("eye_white", plane(rx * 1.04, -0.99 * ry, 0.97 * ry * E["top"], s), 0.010, "頭"),
+                ("eye_white", plane(rx * 1.00, -0.99 * ry, 0.90 * ry * E["top"], s), 0.010, "頭"),
                 ("iris", plane(rx * 0.74, -0.90 * ry, 1.00 * ry * E["top"], s), 0.016, jp + "目"),
                 ("lash", plane(rx * 1.08, -0.823 * ry, 0.995 * ry * E["top"], s), 0.022, "頭"),
             ]

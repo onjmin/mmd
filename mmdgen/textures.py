@@ -109,7 +109,7 @@ class TextureSet:
             a = np.pi * (0.97 - 0.92 * t)
             x = 0.5 + 0.47 * np.cos(a)
             y = 0.52 - 0.44 * np.sin(a)
-            th = 0.050 + 0.060 * t ** 1.5
+            th = 0.085 + 0.075 * t ** 1.5  # 太く下へ伸ばし、瞳の上にかぶせる
             pts_top.append((x * n, (y - th * 0.3) * n))
             pts_bot.append((x * n, (y + th) * n))
         flick = [(0.99 * n, 0.36 * n), (1.0 * n, 0.44 * n), (0.95 * n, 0.52 * n)]
@@ -168,6 +168,19 @@ class TextureSet:
         for y in (0.4, 7.6):  # 上下の細い線
             d.line([(0, y * g), (w, y * g)], fill=_rgb(fg)[:3], width=max(1, lw // 2))
         return self.save(img.resize((64, 64), Image.LANCZOS), name)
+
+    def flame(self, name, top, mid, tip, tongues=6):
+        """裾の炎：上から top→mid→tip の色に変わり、下の方は舌の形に透けて消える。横にくり返して貼る。"""
+        w, h = 128 * S, 128 * S
+        v, u = np.mgrid[0:h, 0:w] / np.array([h - 1, w - 1])[:, None, None]
+        top, mid, tip = (np.asarray(x, float) for x in (top, mid, tip))
+        t1 = np.clip(v / 0.5, 0, 1)[..., None]
+        t2 = np.clip((v - 0.5) / 0.5, 0, 1)[..., None]
+        col = np.where(v[..., None] < 0.5, top * (1 - t1) + mid * t1, mid * (1 - t2) + tip * t2)
+        reach = 0.62 + 0.30 * np.abs(np.sin(u * np.pi * tongues)) ** 2  # 炎の舌の先の高さ
+        alpha = np.clip((reach - v) / 0.18, 0, 1) ** 0.8
+        img = Image.fromarray((np.dstack([col, alpha]) * 255).astype(np.uint8), "RGBA")
+        return self.save(img.resize((128, 128), Image.LANCZOS), name)
 
     def mark(self, name, text, color, font="arialbd.ttf"):
         """肩などに入れる文字の印（背景は透明）。"""

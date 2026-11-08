@@ -20,12 +20,14 @@ GOLD = (0.78, 0.62, 0.32)
 def build(out_dir):
     m = Model("束音ロゼ", "Tabane Roze", "束音ロゼ（非公式・二次創作モデル）", 165)
     c = Character(m, tex=TextureSet(out_dir), hair_color=HAIR, skin_color=(1.0, 0.86, 0.76), eye_color=(0.12, 0.62, 0.46), bust=1.12,
-                  mouth=dict(rx=0.0100, ry=0.0009, smile=-2.0))
+                  eye=dict(rx=0.0215, ry=0.0160, top=0.78), mouth=dict(rx=0.0090, ry=0.0009, smile=5.0))
     m.material("black", "服", BLACK, toon=0)
     m.material("red", "赤", RED, toon=0)
     m.material("red_d", "腰布", RED, double=True, toon=0)
     m.material("pink_d", "炎", PINK, double=True, toon=0)
     m.material("pale_d", "炎の先", PALE_PINK, double=True, toon=0)
+    m.material("flame", "裾の炎", PINK, double=True, edge=False,
+               tex=c.tex.flame("flame.png", (0.90, 0.30, 0.45), PINK, PALE_PINK))
     m.material("white", "白", (0.96, 0.95, 0.93), toon=0)
     m.material("meander", "腰布の雷文", RED, double=True, tex=c.tex.meander("meander.png", RED, (0.97, 0.95, 0.92)))
     m.material("oj", "肩のOJ", RED, edge=False, shadow=False, shade=1.0, tex=c.tex.mark("oj.png", "OJ", (0.80, 0.12, 0.15)),
@@ -38,12 +40,13 @@ def build(out_dir):
     m.material("jade", "髪飾り（緑）", (0.40, 0.80, 0.62), toon=0)
 
     c.build_body(torso_bands=[(1.0, "black"), (0.655, "skin"), (0.566, "black")],
-                 leg_bands=[(1.0, "black"), (0.538, "skin")], arm_bands=[(-1.0, "skin")])
+                 leg_bands=[(1.0, "black"), (0.538, "skin")], arm_bands=[(-1.0, "skin")],
+                 leg_cut=(0.538, 0.030))
     c.build_face()
 
     torso = c.skin_torso()
     # 襟のすぐ下の横長の開き・裾と襟の赤い縁取り
-    m.add("skin", ellipsoid([0, 0.728, -0.050], [0.026, 0.011, 0.012]), m.skin_fixed("上半身2"))
+    m.add("skin", ellipsoid([0, 0.726, -0.052], [0.036, 0.015, 0.012]), m.skin_fixed("上半身2"))
     m.add("red", parts.band_around_torso(0.662, 0.652, 1.04, steps=2), torso)
     # 首の下半分を覆う立て襟と、その縁の赤
     m.add("black", tube([[0, 0.784, 0.008], [0, 0.812, 0.006], [0, 0.836, 0.004]], [0.0255, 0.0225, 0.0222], n=20),
@@ -72,17 +75,17 @@ def build(out_dir):
         a0, a1 = mid - 1.60, mid + 1.60
         radius = lambda y: 0.066 + 0.100 * ((0.57 - y) / 0.57) ** 1.3  # 裾へ向けて広がる
         for y0, y1, mat, steps in [(0.570, 0.200, "red_d", 9), (0.200, 0.150, "meander", 2),
-                                   (0.150, 0.070, "pink_d", 4), (0.070, 0.004, "pale_d", 4)]:
-            jag = (lambda a: 0.060 * np.abs(np.sin(a * 5.0)) ** 1.5) if mat == "pale_d" else None
+                                   (0.150, 0.004, "flame", 7)]:
+            jag = (lambda a: 0.040 * np.abs(np.sin(a * 5.0)) ** 1.5) if mat == "flame" else None
             grow = lambda t, y0=y0, y1=y1: radius(y0 + (y1 - y0) * t) / parts.leg_at(y0 + (y1 - y0) * t, s)[0]
             mesh = parts.leg_tube(s, y0, y1, grow, steps=steps, n=26, a0=a0, a1=a1, jag=jag)
             # 雷文は 1 マスが帯の高さと同じくらいになるよう横にくり返す
-            m.add(mat, mesh, leg, uv=mesh.uv * [7.0, 1.0] if mat == "meander" else None)
+            m.add(mat, mesh, leg, uv=mesh.uv * [{"meander": 7.0, "flame": 3.0}.get(mat, 1.0), 1.0])
         # 足元は炎に包まれて見えない：足首から下を、上へ揺らめく炎の輪で囲む
-        for y0, y1, mat, g, amp in [(0.000, 0.120, "pink_d", 1.9, 0.050), (-0.004, 0.070, "pale_d", 2.2, 0.040)]:
-            m.add(mat, parts.leg_tube(s, y0, y1, g, steps=3, n=24,
-                                      jag=lambda a, amp=amp: amp * np.abs(np.sin(a * 3.0 + s)) ** 1.5),
-                  m.skin_fixed(jp + "足首"))
+        # 下が太く上へすぼまり、上ほど舌の形に透けて消える炎（靴に見えないよう縁も乱す）
+        mesh = parts.leg_tube(s, 0.000, 0.120, lambda t: 2.1 * (1 - 0.35 * t), steps=5, n=40,
+                              jag=lambda a: 0.06 * np.abs(np.sin(a * 4.0 + s)) ** 3)
+        m.add("flame", mesh, m.skin_fixed(jp + "足首"), uv=mesh.uv * [3.0, 1.0])
     # 左の二の腕の「OJ」
     m.add("oj", shoulder_mark(1.0), c.skin_arm("左"))
 
@@ -145,8 +148,8 @@ def hair(c):
     rng = np.random.default_rng(7)  # 束ごとに太さと長さを少しずつ変え、筋がそろって見えないようにする
     # 姫カットの前髪：隣と重なる幅にして、毛先の高さを少し乱す
     for th in np.linspace(-0.66, 0.66, 11):
-        c.bang("hair", th + rng.uniform(-0.03, 0.03), 0.20 + rng.uniform(-0.04, 0.04), 0.024 * rng.uniform(0.8, 1.25),
-               thick=0.005, e_start=1.25, pointy=False, lift_end=1.08)
+        c.bang("hair", th + rng.uniform(-0.03, 0.03), 0.07 + rng.uniform(-0.025, 0.025), 0.026 * rng.uniform(0.85, 1.2),
+               thick=0.009, e_start=1.25, pointy=False, lift_end=1.12)
     # 頬の横に細く垂れる髪（顔の幅を隠さないよう、頬の端に沿わせる）
     for sg in (1, -1):
         for th, e_end, w in [(0.86, -0.62, 0.013), (0.96, -0.70, 0.012)]:
@@ -177,10 +180,10 @@ def hair(c):
             ant = catmull([base, base + np.array([sg * (0.012 + dx), 0.028, 0.0]),
                            base + np.array([sg * (0.03 + dx), 0.045 - k * 0.012, 0.01])], 10)
             m.add("hair", tube(ant, np.linspace(0.0035, 0.0008, len(ant)), n=6), m.skin_fixed("頭"))
-        orb = base + d * 0.012
-        m.add("jade", ellipsoid(orb, [0.0145] * 3, keep=lambda q, sg=sg: q[:, 0] * sg >= -0.05, nu=16, nv=10),
+        orb = base + d * 0.015
+        m.add("jade", ellipsoid(orb, [0.0180] * 3, keep=lambda q, sg=sg: q[:, 0] * sg >= -0.05, nu=16, nv=10),
               m.skin_fixed("頭"))
-        m.add("white", ellipsoid(orb, [0.0143] * 3, keep=lambda q, sg=sg: q[:, 0] * sg <= 0.05, nu=16, nv=10),
+        m.add("white", ellipsoid(orb, [0.0178] * 3, keep=lambda q, sg=sg: q[:, 0] * sg <= 0.05, nu=16, nv=10),
               m.skin_fixed("頭"))
     # ヘッドセット（左耳）とマイク
     ear = c.head.c + np.array([0.084, -0.010, 0.002])
