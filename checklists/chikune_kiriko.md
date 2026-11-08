@@ -2,6 +2,8 @@
 
 比較: `viewer/?m=chikune_kiriko&ref=face&img=chikune_kiriko.png&fb=0.38,0.16,0.62,0.34&span=0.22&cy=0.88&yaw=40`（顔、斜め 40°）。
 立ち絵は `ref/chikune_kiriko.png`（gitignore）。顔は斜めで、左目は前髪に隠れている。
+ほかの絵も探した（2026-11-08）：open2ch の「安価でボカロスレ発『蓄音キリコ』スレ」「蓄音キリコ描いた！」などの貼り絵は imgu.jp が消えていて見られない。
+おんJwiki にはまだページがない。同じスレには「キリコの肌は黄色（橙）」という設定があり、模型の肌色はそれに合わせてある。
 
 ## 比率（`python -m mmdgen.measure chikune_kiriko` で照合）
 
