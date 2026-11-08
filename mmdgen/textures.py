@@ -67,17 +67,22 @@ class TextureSet:
 
     # ---- 目：白目、瞳、まつ毛の 3 枚（既製MMDモデル・立ち絵の形状・配色に準拠） ----
     def eye_white(self, name="eye_white.png"):
-        """上がすっきりしたアーチ状、下が柔らかな弧を描くMMD美少女の白目。上部にまぶたの淡い落ち影を入れる。"""
+        """目頭側はすぐ瞳に入るよう急角度で立ち上がって内側の白目をほぼゼロにし、
+        目尻側（+x）にだけ自然な白い三角余白ができる非対称MMD美少女の白目。"""
         n = 256
         v, u = np.mgrid[0:n, 0:n] / (n - 1)
         x = (u - 0.5) * 2.0  # -1 (目頭) .. +1 (目尻)
-        w = np.maximum(0.0, 1.0 - (x / 0.92) ** 2)
-        y_base = 0.57 - 0.035 * x
-        y_top = y_base - 0.46 * (w ** 0.52)
-        y_bot = y_base + 0.33 * (w ** 0.72)
+        # 目頭側（x < 0）は丸く急に立ち上がり（べき指数 0.36）、目尻側（x > 0）はなだらかに伸びる非対称カーブ
+        x_norm = np.clip((x + 0.90) / 1.82, 0.0, 1.0)
+        w = np.sin(np.pi * (x_norm ** 0.78)) ** 2
+        y_base = 0.58 - 0.030 * x
+        p_top = np.where(x < 0, 0.38, 0.54)
+        p_bot = np.where(x < 0, 0.52, 0.78)
+        y_top = y_base - 0.47 * (w ** p_top)
+        y_bot = y_base + 0.32 * (w ** p_bot)
         span = np.maximum(y_bot - y_top, 1e-4)
         tv = (v - y_top) / span
-        inside = (w > 0.0) & (tv >= 0.0) & (tv <= 1.0)
+        inside = (w > 1e-3) & (tv >= 0.0) & (tv <= 1.0)
         dist_edge = np.minimum(v - y_top, y_bot - v)
         alpha = np.clip(dist_edge * 55.0, 0.0, 1.0) * inside
 
@@ -143,8 +148,8 @@ class TextureSet:
 
     def lash(self, name="lash.png", color=(0.10, 0.07, 0.08)):
         """既製MMDモデル（初音ミク・Tda式等）準拠のすっきり上品なアイライン：
-        目頭をすっきり開け、中央〜目尻にかけて優美な弧を描き、目尻に小さなハネを作る。
-        重たい赤茶のヘルメット状フードを廃止し、柔らかなダークブラウン〜チャコールの洗練されたラインにする。"""
+        目頭側は瞳の外縁にすぐ接する角度で立ち上げて内側の白目隙間をなくし、
+        中央〜目尻にかけて優美な弧を描いて目尻側に白い三角余白とキュートなハネを作る。"""
         n = 256 * S
         img = Image.new("RGBA", (n, n), (0, 0, 0, 0))
         d = ImageDraw.Draw(img)
@@ -152,53 +157,68 @@ class TextureSet:
         edge_brown = _rgb((0.24, 0.14, 0.15), 255)
         core_dark = _rgb(color, 255)
 
-        # 1) 上まつ毛のメインアーチ（目頭側は細くすっきり抜き、中央から目尻へ品よく太くなる）
+        # 1) 上まつ毛のメインアーチ（eye_white の非対称カーブにぴったり沿わせる）
         ts = np.linspace(0.0, 1.0, 100)
         pts_top, pts_bot = [], []
         for t in ts:
-            x = -0.92 + 1.84 * t
+            x = -0.90 + 1.82 * t
             u = 0.5 + 0.5 * x
-            w = max(0.0, 1.0 - (x / 0.92) ** 2)
-            y_base = 0.57 - 0.035 * x
-            y_arch = y_base - 0.46 * (w ** 0.52)
-            env = (np.sin(np.pi * t) ** 0.55) * (0.42 + 0.58 * (t ** 0.7))
-            th_up = (0.048 + 0.038 * (t ** 1.1)) * env + 0.004
-            th_dn = (0.034 + 0.036 * (t ** 1.3)) * env + 0.004
+            x_norm = np.clip((x + 0.90) / 1.82, 0.0, 1.0)
+            w = np.sin(np.pi * (x_norm ** 0.78)) ** 2
+            p_top = 0.38 if x < 0 else 0.54
+            y_base = 0.58 - 0.030 * x
+            y_arch = y_base - 0.47 * (w ** p_top)
+            env = (np.sin(np.pi * t) ** 0.50) * (0.48 + 0.52 * (t ** 0.65))
+            th_up = (0.048 + 0.038 * (t ** 1.1)) * env + 0.005
+            th_dn = (0.036 + 0.036 * (t ** 1.3)) * env + 0.005
             pts_top.append((u * n, (y_arch - th_up) * n))
             pts_bot.append((u * n, (y_arch + th_dn) * n))
 
         d.polygon(pts_top + pts_bot[::-1], fill=edge_brown)
 
+        # 目頭の小さな引き締めライン（瞳の内側リムと自然につながり、目頭の白目隙間を完全に埋める）
+        inner_corner = [
+            (0.04 * n, 0.56 * n),
+            (0.09 * n, 0.36 * n),
+            (0.14 * n, 0.42 * n),
+            (0.11 * n, 0.62 * n),
+        ]
+        d.polygon(inner_corner, fill=edge_brown)
+
         # 目尻のキュートなハネと繊細なまつ毛スパイク
         wing = [
-            (0.84 * n, 0.25 * n),
-            (0.98 * n, 0.30 * n),
-            (0.92 * n, 0.41 * n),
-            (0.86 * n, 0.47 * n),
-            (0.82 * n, 0.37 * n),
+            (0.84 * n, 0.26 * n),
+            (0.98 * n, 0.31 * n),
+            (0.92 * n, 0.42 * n),
+            (0.86 * n, 0.48 * n),
+            (0.82 * n, 0.38 * n),
         ]
         d.polygon(wing, fill=edge_brown)
 
-        c_lo, c_hi = int(len(ts) * 0.10), int(len(ts) * 0.92)
+        c_lo, c_hi = int(len(ts) * 0.08), int(len(ts) * 0.92)
         d.polygon(pts_top[c_lo:c_hi] + pts_bot[c_lo:c_hi][::-1], fill=core_dark)
 
         # 2) 二重まぶたの線（上まつ毛の上に沿う繊細なライン）
         crease_pts = []
-        for t in np.linspace(0.16, 0.76, 45):
-            x = -0.92 + 1.84 * t
+        for t in np.linspace(0.14, 0.76, 45):
+            x = -0.90 + 1.82 * t
             u = 0.5 + 0.5 * x
-            w = max(0.0, 1.0 - (x / 0.92) ** 2)
-            y_c = max(0.015, (0.57 - 0.035 * x) - 0.46 * (w ** 0.52) - 0.076 * (np.sin(np.pi * t) ** 0.6))
+            x_norm = np.clip((x + 0.90) / 1.82, 0.0, 1.0)
+            w = np.sin(np.pi * (x_norm ** 0.78)) ** 2
+            p_top = 0.38 if x < 0 else 0.54
+            y_c = max(0.015, (0.58 - 0.030 * x) - 0.47 * (w ** p_top) - 0.074 * (np.sin(np.pi * t) ** 0.6))
             crease_pts.append((u * n, y_c * n))
         d.line(crease_pts, fill=_rgb((0.36, 0.22, 0.20), 195), width=max(2, int(n * 0.0075)))
 
         # 3) 下まぶたの控えめなアイライン（目尻寄りに薄く添える）
         low_pts = []
-        for t in np.linspace(0.38, 0.78, 24):
-            x = -0.92 + 1.84 * t
+        for t in np.linspace(0.36, 0.78, 24):
+            x = -0.90 + 1.82 * t
             u = 0.5 + 0.5 * x
-            w = max(0.0, 1.0 - (x / 0.92) ** 2)
-            y_l = (0.57 - 0.035 * x) + 0.33 * (w ** 0.72)
+            x_norm = np.clip((x + 0.90) / 1.82, 0.0, 1.0)
+            w = np.sin(np.pi * (x_norm ** 0.78)) ** 2
+            p_bot = 0.52 if x < 0 else 0.78
+            y_l = (0.58 - 0.030 * x) + 0.32 * (w ** p_bot)
             low_pts.append((u * n, y_l * n))
         d.line(low_pts, fill=_rgb((0.38, 0.24, 0.22), 165), width=max(2, int(n * 0.0085)))
 
