@@ -355,15 +355,25 @@ class Head:
     def project(self, d0, ab, off, plane_dir=None):
         """接平面上の (a, b) を頭の表面に水平投影して貼り付ける。
         球中心からの放射投影だと顔の下部（口や目尻）で外側ほど Y が上へ引っ張られて歪むため、
-        接平面上の高さ q_y をそのまま頭の表面の高さ h に対応させて歪みを防ぐ。"""
+        接平面上の高さ q_y をそのまま頭の表面の高さ h に対応させて歪みを防ぐ。
+        横方向も、頭の軸から放射状に当てると目尻のように面が奥へ回り込む所で内へ縮み、目がしずく形にゆがむので、
+        板の向き（水平成分）に沿ってまっすぐ押し当てる。"""
         p0 = self.point(d0)
         pdir = d0 if plane_dir is None else plane_dir
-        e1 = norm(np.cross(np.array([pdir[0], 0.0, pdir[2]]), UP))
+        nrm = norm(np.array([pdir[0], 0.0, pdir[2]]))
+        e1 = norm(np.cross(nrm, UP))
         e2 = UP
         ab = np.asarray(ab, float)
         q = p0 + ab[..., :1] * e1 + ab[..., 1:2] * e2
         h_q = np.clip((q[..., 1] - self.y0) / self.H, 0.0, 1.0)
-        phi_q = np.arctan2(q[..., 0], self.zc - q[..., 2])
+        line = q
+        for _ in range(6):
+            phi_q = np.arctan2(line[..., 0], self.zc - line[..., 2])
+            p = self.surface(h_q, phi_q)
+            # 面の点の、板の向きに沿った深さだけ線上を動かす（y は動かさない）
+            t = (p - q) @ nrm
+            line = q + t[..., None] * nrm
+        phi_q = np.arctan2(line[..., 0], self.zc - line[..., 2])
         p = self.surface(h_q, phi_q)
         out = norm(np.stack([p[..., 0], (p[..., 1] - self.c[1]) * 0.25, p[..., 2] - self.zc], -1))
         return p + out * (off * 0.085)

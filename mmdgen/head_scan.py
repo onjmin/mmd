@@ -86,14 +86,17 @@ def scan():
                     table[i, j] = np.mean(r) / L
         return table
     table, white = measure(tris), measure(whites)
-    # 目の穴は、まわりの肌を向きにそってつないだ面から、白目の奥へ少しだけ下げる。
-    # 白目の板そのままだと深い穴になり、斜め・横から見たとき目の所が大きくへこんで見える
-    for i in range(len(SCAN_V)):
-        row, ok = table[i], np.isfinite(table[i])
-        hole = ~ok & np.isfinite(white[i])
-        if hole.any() and ok.sum() >= 2:
-            fill = np.interp(SCAN_PHI, SCAN_PHI[ok], row[ok])
-            row[hole] = fill[hole] - SOCKET * np.clip(fill[hole] - white[i][hole], 0, None)
+    # 目の穴は、白目の丸い面（眼球）からの浮きを穴の縁の肌から 2 次元でなめらかに広げて埋め、白目の奥へ少しだけ下げる。
+    # 行ごとに埋めると面がでこぼこし、上に貼る目の板がゆがむ。白目の板そのままだと深い穴になり、斜め・横から目の所がへこむ
+    hole = ~np.isfinite(table) & np.isfinite(white)
+    rim = np.isfinite(table) & np.isfinite(white)
+    d = np.where(rim, table - white, 0.0)
+    known = rim.copy()
+    for _ in range(2000):
+        pad = np.pad(d, 1, mode="edge")
+        avg = (pad[:-2, 1:-1] + pad[2:, 1:-1] + pad[1:-1, :-2] + pad[1:-1, 2:]) / 4
+        d = np.where(hole, avg, d)
+    table = np.where(hole, white + (1 - SOCKET) * d, table)
     # 肌の三角形の縁や細かな段で面がでこぼこしないよう、測れた所だけで軽くならす
     ok = np.isfinite(table)
     t0 = np.where(ok, table, 0.0)
