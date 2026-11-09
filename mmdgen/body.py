@@ -326,6 +326,12 @@ def _mix_c(a, b, t):
     return np.asarray(a, float) * (1 - t) + np.asarray(b, float) * t
 
 
+# 目の板：顔の面から奥へ下げる量・板の向き（目の向きの何割外を向くか）・板の裏で肌を下げる量
+EYE_INSET = 0.0012
+EYE_TURN = 0.40
+EYE_SOCKET_DEPTH = 0.0006
+
+
 class Head:
     """頭（肌の面）。顔の前半分は美少女モデルを測った表（_hs_lookup）で作り、目のくぼみ・鼻・口元・あごの凹凸を持たせる。
     表のない頭頂・後頭部は、高さごとの断面を前後で半径の違う楕円でつなぐ。
@@ -341,6 +347,7 @@ class Head:
         self.shift = HEAD_F[0] * height - float(_hs_lookup(-1.0, 0.0, 9.0)[0]) * self.L
         self.zc = zc - self.shift
         self.c = np.array([0.0, chin_y + 0.52 * height, z])
+        self.sockets = []
         self.r = np.array([max(HEAD_W), 0.50, (f + b) / 2]) * height
 
     def radius(self, h, phi):
@@ -372,7 +379,23 @@ class Head:
         jaw_back = smoothstep(0.94, 0.30, np.cos(phi))
         jaw_lift = 0.09 * (1.0 - smoothstep(0.0, 0.26, h_c)) * jaw_back
         y = self.y0 + (h_c + jaw_lift) * self.H
-        return np.stack([rho * np.sin(phi), y, self.zc - rho * np.cos(phi)], -1)
+        p = np.stack([rho * np.sin(phi), y, self.zc - rho * np.cos(phi)], -1)
+        return self._carve(p)
+
+    def add_socket(self, p0, n, e1, rx, ry, depth, rim=1.5):
+        """目のくぼみ：目の板（p0 を通り n を向く平面、横 e1・縦 UP に半径 rx・ry）の裏へ、肌を depth だけ下げる。
+        板の外へ rim 倍の所までなだらかに戻し、まぶたの縁にする。"""
+        self.sockets.append((np.asarray(p0, float), np.asarray(n, float), np.asarray(e1, float), rx, ry, depth, rim))
+
+    def _carve(self, p):
+        for p0, n, e1, rx, ry, depth, rim in getattr(self, "sockets", []):
+            rel = p - p0
+            a, b, d = rel @ e1 / rx, rel[..., 1] / ry, rel @ n
+            r = (np.abs(a) ** 3 + np.abs(b) ** 3) ** (1 / 3)  # 丸みのある四角（台形の目の角がはみ出さない）
+            w = 1.0 - smoothstep(1.0, rim, r)
+            push = np.maximum(d + depth, 0.0) * w * (d > -4 * depth)
+            p = p - push[..., None] * n
+        return p
 
     def pitch_at(self, h, yaw=0.0):
         """あごから h（頭の高さ比）の高さで、正面から yaw の向きにある面の点を指す仰角。"""
@@ -427,7 +450,7 @@ class Head:
         out = norm(np.stack([p[..., 0], (p[..., 1] - self.c[1]) * 0.25, p[..., 2] - self.zc], -1))
         return p + out * (off * 0.085)
 
-    def mesh(self, nh=96, nphi=128):
+    def mesh(self, nh=128, nphi=192):
         hs = np.linspace(0, 1, nh)
         phis = np.arange(nphi) / nphi * TAU
         rings = [self.surface(h, phis) for h in hs]
@@ -517,6 +540,11 @@ class Character:
         self.mouth.update(mouth or {})
         self.mouth["pitch"] = self.head.pitch_at(self.mouth["h"])
         self.mouth["nose_pitch"] = self.head.pitch_at(self.mouth["nose_h"], 0.02)
+        # 目は顔の曲面に沿わせず、少し外を向いた平らな板にして、顔に彫ったくぼみにはめる（既製モデルのずんだもんと同じ作り）。
+        # 斜めから見ても目は平らな楕円として縮むだけで、頬の丸みに巻きつかない
+        for _, _, s in SIDES:
+            p0, n, e1 = self.eye_frame(s)
+            hd.add_socket(p0, n, e1, self.eye["rx"] * 1.08, self.eye["ry"] * 1.08, EYE_SOCKET_DEPTH)
         m = model
         m.default_toon_tex = tex.toon("toon_cloth.png", (0.82, 0.80, 0.89))
         m.material("skin", "肌", skin_color, toon_tex=tex.toon("toon_skin.png", (1.0, 0.85, 0.80)))
@@ -528,6 +556,16 @@ class Character:
         physics().body_rigids(self)
 
     # ---- ボーン ----
+    def eye_frame(self, s):
+        """目の板の中心・向き（外向きの法線）・横向き（目尻の方）。板は顔の面の目の中心から EYE_INSET だけ奥に置く。"""
+        E = self.eye
+        d0 = Head.dir(s * E["yaw"], E["pitch"])
+        pdir = Head.dir(s * E["yaw"] * EYE_TURN, E["pitch"] * 0.75)
+        n = norm(np.array([pdir[0], 0.0, pdir[2]]))
+        e1 = norm(np.cross(n, UP))
+        p0 = self.head.point(d0) - n * EYE_INSET
+        return p0, n, e1
+
     def _rig(self):
         m = self.m
         rmv = pmx.BONE_ROTATE | pmx.BONE_MOVE | pmx.BONE_VISIBLE | pmx.BONE_OPERABLE
@@ -967,13 +1005,20 @@ class Character:
                 ("iris", layer("iris", 11, 11), 0.0048, jp + "目"),
                 ("lash", layer("lash", 17, 15), 0.0072, "頭"),
             ]
+            p0, n_eye, e1_eye = self.eye_frame(s)
+
+            def plate(rows, off):
+                """平らな目の板（顔の曲面に貼らない）。"""
+                rings = [p0 + r[:, :1] * e1_eye + r[:, 1:2] * UP + n_eye * (off * 0.085) for r in rows]
+                return _flat_loft(rings, n_eye, False)
+
             for mat, rows, off, bone in layers:
                 rows = tilted(rows)
                 shut = dict(keep=0.2, pivot=1.0 * ry) if mat == "lash" else {}
-                base = m.add(mat, h.decal(d0, rows, off, closed=False, plane_dir=pdir), m.skin_fixed(bone))
-                blink = h.decal(d0, remap_ab(rows, closer(-0.20, **shut)), off, closed=False, plane_dir=pdir)[0]
+                base = m.add(mat, plate(rows, off), m.skin_fixed(bone))
+                blink = plate(remap_ab(rows, closer(-0.20, **shut)), off)[0]
                 m.add_morph_part("まばたき", base, blink)
-                m.add_morph_part("笑い", base, h.decal(d0, remap_ab(rows, closer(0.28, **shut)), off, closed=False, plane_dir=pdir)[0])
+                m.add_morph_part("笑い", base, plate(remap_ab(rows, closer(0.28, **shut)), off)[0])
                 m.add_morph_part("ウィンク" if s > 0 else "ウィンク右", base, blink)
             # 眉は目の上に少し離して（美少女モデルの眉の高さ）、目頭の上から目尻の少し手前まで長くかける
             bd = Head.dir(s * E["yaw"], E["pitch"] + 0.42)
