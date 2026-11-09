@@ -23,8 +23,8 @@ KH_YC, KH_RX, KH_RY = 0.746, 0.036, 0.0115
 def build(out_dir):
     m = Model("束音ロゼ", "Tabane Roze", "束音ロゼ（非公式・二次創作モデル）", 165)
     c = Character(m, tex=TextureSet(out_dir), hair_color=HAIR, skin_color=(1.0, 0.86, 0.76), eye_color=(0.12, 0.62, 0.46), bust=1.24,
-                  eye=dict(yaw=0.570, h=0.376, rx=0.0225, ry=0.0118, top=0.88, iris=0.56, iris_in=0.28),
-                  mouth=dict(rx=0.0080, ry=0.0009, smile=1.0, h=0.125, nose_h=0.245))
+                  eye=dict(yaw=0.700, h=0.420, rx=0.0250, ry=0.0082, top=0.88, iris=0.56, iris_in=0.28),
+                  mouth=dict(rx=0.0080, ry=0.0009, smile=1.0, h=0.137, nose_h=0.232))
     m.material("black", "服", BLACK, toon=0)
     m.material("red", "赤", RED, toon=0)
     m.material("red_trim", "赤縁", RED, toon=0, edge=False)
@@ -239,31 +239,21 @@ def hair(c):
     m = c.m
     c.hair_cap("hair")
     rng = np.random.default_rng(7)
-    # 姫カットの前髪：頭頂〜額の肌を隙間なく覆いつつ、毛先で繊細なスリットを入れて眉と額がちらりとのぞく軽やかさを作る
-    bang_specs = [
-        (-0.50, -0.02, 0.0108),
-        (-0.36,  0.00, 0.0100),
-        (-0.19,  0.01, 0.0094),
-        (-0.06,  0.00, 0.0098),
-        ( 0.07,  0.00, 0.0098),
-        ( 0.23,  0.01, 0.0094),
-        ( 0.36,  0.00, 0.0100),
-        ( 0.50, -0.02, 0.0108),
-    ]
-    for th, e_end, w in bang_specs:
-        c.bang("hair", th, e_end, w, thick=0.0055, e_start=1.25, pointy=False, lift_end=1.032)
-    # こめかみ〜頬のすぐ横に段差で垂れる姫毛（目尻のすぐ外から耳の前を覆い、小顔シルエットを作る）
+    # 原画のように髪は大きなかたまりで描き、細い束は並べない。
+    # 姫カットの前髪：太い束 7 本を重ねてまっすぐな面にし、眉の高さで切りそろえる（目の高さから決める）
+    cut = c.eye["pitch"] + 0.33
+    for th in (-0.70, -0.46, -0.23, 0.0, 0.23, 0.46, 0.70):
+        c.bang("hair", th, cut - 0.02 * abs(th), 0.0175, thick=0.0060, e_start=1.25, pointy=False, lift_end=1.032)
+    # 姫毛：目尻より外、頬のすぐ横に左右 2 本ずつ。胸の高さで切れる
     for sg in (1, -1):
-        for th, e_end, w in [(0.58, -0.25, 0.0105), (0.68, -0.45, 0.0105), (0.79, -0.57, 0.0105), (0.90, -0.63, 0.0105), (1.02, -0.42, 0.0115)]:
-            c.bang("hair", sg * th, e_end, w, thick=0.0055, e_start=1.25, pointy=True, lift_end=1.030)
+        for th, e_end, w in [(1.22, -0.62, 0.0130), (1.36, -0.50, 0.0150)]:
+            c.bang("hair", sg * th, e_end, w, thick=0.0060, e_start=1.25, pointy=True, lift_end=1.030)
     # 結い髪から下がる左右の房：玉の下から外へ張り出し、あごの下で外へはねる。1〜2 本は胸まで、奥の緑は腰まで
     hc, hr = c.hair_surface()
     for sg in (1, -1):
         base = hc + Head.dir(sg * 1.05, 0.80) * hr
-        for k, (y_end, w, mat, back) in enumerate([(0.840, 0.017, "hair", 0.000), (0.828, 0.015, "hair", 0.006),
-                                                    (0.850, 0.014, "hair", 0.012), (0.815, 0.016, "hair", 0.018),
-                                                    (0.735, 0.013, "hair", 0.010), (0.760, 0.012, "hair", 0.020),
-                                                    (0.600, 0.015, "teal", 0.032), (0.575, 0.016, "teal", 0.040)]):
+        for k, (y_end, w, mat, back) in enumerate([(0.835, 0.024, "hair", 0.004), (0.750, 0.020, "hair", 0.016),
+                                                    (0.585, 0.024, "teal", 0.036)]):
             j = rng.uniform(-0.006, 0.006, 3)
             out = 0.066 + j[0] - (0.012 if mat == "teal" else 0.0)
             pts = [base + [0, 0, back * 0.3],
@@ -282,9 +272,9 @@ def hair(c):
             widths = w * (0.7 + 0.3 * np.minimum(1, tt * 4)) * (1 - 0.9 * np.clip((tt - 0.75) / 0.25, 0, 1))
             c.strand(path, widths, 0.005, sides, mat, skin=c.hair_chain(path, base[1] - 0.03, 3, w * 0.6))
     # 後ろ髪（肩甲骨くらいまで）：前からは房の陰に隠れる範囲だけ
-    for th in np.linspace(2.0, np.pi, 7):
+    for th in np.linspace(2.0, np.pi, 4):
         for sg in ((1, -1) if th < np.pi - 1e-3 else (1,)):
-            c.drape("hair", sg * th, 0.72 + rng.uniform(-0.03, 0.03), 0.034 * rng.uniform(0.8, 1.25),
+            c.drape("hair", sg * th, 0.72 + rng.uniform(-0.02, 0.02), 0.058,
                     flare=0.04, pointy=True, bones=3)
     # 頭の両側の小さな結い髪と陰陽玉の髪飾り
     for sg in (1, -1):

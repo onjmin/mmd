@@ -20,8 +20,8 @@ BOW = (0.38, 0.15, 0.11)
 def build(out_dir):
     m = Model("蓄音キリコ", "Chikune Kiriko", "蓄音キリコ（非公式・二次創作モデル）", 158)
     c = Character(m, tex=TextureSet(out_dir), hair_color=HAIR, skin_color=(0.86, 0.58, 0.36), eye_color=(0.66, 0.24, 0.12), bust=0.95,
-                  mouth=dict(rx=0.0094, ry=0.0030, smile=-0.6, h=0.125, nose_h=0.245),
-                  eye=dict(yaw=0.530, h=0.388, rx=0.0208, ry=0.0106, top=0.88, iris=0.54, iris_in=0.28))
+                  mouth=dict(rx=0.0094, ry=0.0030, smile=-0.6, h=0.137, nose_h=0.232),
+                  eye=dict(yaw=0.690, h=0.420, rx=0.0238, ry=0.0078, top=0.88, iris=0.54, iris_in=0.28))
     m.material("suit", "インナー", SUIT, toon=0)
     m.material("coat", "コート", COAT, double=True, toon=0)
     m.material("fur", "ファー", FUR, toon=1)
@@ -76,20 +76,21 @@ def build(out_dir):
 def hair(c):
     m = c.m
     c.hair_cap("hair")
-    # 斜めぱっつんの前髪。右目（-X 側）を隠す
-    for th in np.linspace(-0.95, 0.95, 15):
+    # 原画のように髪は大きなかたまりで描き、細い束は並べない。
+    # 斜めぱっつんの前髪：太い束 7 本。右目（-X 側）を隠し、左は眉の上で切れる（目の高さから決める）
+    top = c.eye["pitch"] + 0.50
+    for th in np.linspace(-0.95, 0.95, 7):
         cover = np.clip((0.30 - th) / 0.85, 0, 1)
-        e_end = 0.28 - 0.74 * cover
-        c.bang("hair", th, e_end, 0.0205, e_start=1.25, pointy=False, lift_end=1.065 + 0.03 * cover, sway=-0.12 * cover)
-    # あごの長さのボブ：横は口の下、後ろはうなじで切れ、毛先は外へはねる
-    for th in np.linspace(0.9, np.pi, 9):
+        e_end = top - 0.74 * cover
+        c.bang("hair", th, e_end, 0.0330, e_start=1.25, pointy=False, lift_end=1.065 + 0.03 * cover, sway=-0.12 * cover)
+    # あごの長さのボブ：横は口の下、後ろはうなじで切れ、毛先は外へはねる。目尻より外から始める
+    for th in np.linspace(1.35, np.pi, 5):
         for sg in ((1, -1) if th < np.pi - 1e-3 else (1,)):
-            y_end = 0.850 - 0.014 * (th - 0.9) / (np.pi - 0.9)
-            c.drape("hair", sg * th, y_end, 0.032, flare=0.0, pointy=True, splay=0.30, wave=0.003)
+            y_end = 0.850 - 0.014 * (th - 1.35) / (np.pi - 1.35)
+            c.drape("hair", sg * th, y_end, 0.052, flare=0.0, pointy=True, splay=0.30, wave=0.003)
     # 右の耳の後ろで結んだサイドポニー。肩の後ろを波打って腰の上まで垂れ、毛先が水色になる
     base = np.array([-0.052, 0.928, 0.050])
-    for k, (dx, dz, ln) in enumerate([(0.000, 0.000, 1.00), (-0.012, 0.010, 0.93), (0.010, 0.012, 0.88),
-                                       (-0.006, -0.010, 0.82), (0.008, -0.006, 0.76)]):
+    for k, (dx, dz, ln) in enumerate([(0.000, 0.000, 1.00), (-0.010, 0.010, 0.90), (0.008, -0.008, 0.80)]):
         ctrl = [base, [-0.098, 0.902, 0.058], [-0.130 + dx, 0.835, 0.060 + dz], [-0.128 + dx, 0.760, 0.066 + dz],
                 [-0.140 + 1.4 * dx, 0.690, 0.060 + dz], [-0.124 + 2.0 * dx, 0.600, 0.052 + dz]]
         path = catmull(ctrl, 30)
@@ -98,7 +99,7 @@ def hair(c):
         t = np.linspace(0, 1, n)
         path = path + np.outer(0.010 * np.sin(t * 9 + k * 1.3) * np.clip(t * 3, 0, 1), [1.0, 0, 0.4])
         mats = ["tip" if p[1] < 0.715 else "hair" for p in path]
-        c.strand(path, 0.028 * np.sin(np.pi * np.clip(t * 0.9 + 0.1, 0, 1)) ** 0.6 + 0.004,
+        c.strand(path, 0.036 * np.sin(np.pi * np.clip(t * 0.9 + 0.1, 0, 1)) ** 0.6 + 0.004,
                  0.012 * (1 - 0.6 * t) + 0.003, np.tile([0, 0, 1.0], (n, 1)), mats,
                  skin=c.hair_chain(path, 0.92, 4, 0.020))
     # 頭の上の後ろ寄りに大きなリボン。正面から見ると頭の上の左右に輪が出る（pixiv の全身絵・おんJRPG の立ち絵）
