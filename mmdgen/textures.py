@@ -162,7 +162,7 @@ class TextureSet:
         bright_col = np.clip(color * 1.25 + 0.38, 0.0, 1.0)
         rim_col = np.clip(color * 0.22 + np.array([0.02, 0.03, 0.10]), 0.0, 1.0)
 
-        t_upper = np.clip((y - 0.28) / 0.28, 0.0, 1.0)
+        t_upper = np.clip((y - 0.32) / 0.26, 0.0, 1.0)
         t_upper = t_upper * t_upper * (3 - 2 * t_upper)
         col = top_shade * (1 - t_upper[..., None]) + mid_col * t_upper[..., None]
         # 下半分の三日月形の明るみ
@@ -189,9 +189,9 @@ class TextureSet:
         img = Image.fromarray((np.clip(col, 0, 1) * 255).astype(np.uint8), "RGB")
         d = ImageDraw.Draw(img)
         # 光：板の上部はまつ毛に隠れるので、見える高さに置く
-        d.ellipse([n * 0.12, n * 0.28, n * 0.42, n * 0.41], fill=(255, 255, 255))  # まつ毛の際の横長の光
+        d.ellipse([n * 0.12, n * 0.33, n * 0.42, n * 0.45], fill=(255, 255, 255))  # まつ毛の際の横長の光
         d.ellipse([n * 0.60, n * 0.66, n * 0.74, n * 0.78], fill=(250, 250, 250))
-        d.ellipse([n * 0.66, n * 0.30, n * 0.74, n * 0.37], fill=(235, 235, 235))
+        d.ellipse([n * 0.66, n * 0.35, n * 0.74, n * 0.41], fill=(235, 235, 235))
         img.putalpha(Image.fromarray((alpha * 255).astype(np.uint8)))
         return self.save(img.resize((256, 256), Image.LANCZOS), name)
 
