@@ -248,18 +248,22 @@ def hair(c):
     for sg in (1, -1):
         for th, e_end, w in [(1.22, -0.62, 0.0130), (1.36, -0.50, 0.0150)]:
             c.bang("hair", sg * th, e_end, w, thick=0.0060, e_start=1.25, pointy=True, lift_end=1.030)
-    # 結い髪から下がる左右の房：玉の下から外へ張り出し、あごの下で外へはねる。1〜2 本は胸まで、奥の緑は腰まで
+    # 結い髪から下がる左右の房（公式の立ち絵）：玉の下から顔の横を少し外へ流れ、肩〜胸の高さで細く分かれて終わる黒髪
     hc, hr = c.hair_surface()
     for sg in (1, -1):
         base = hc + Head.dir(sg * 1.05, 0.80) * hr
-        for k, (y_end, w, mat, back) in enumerate([(0.835, 0.024, "hair", 0.004), (0.750, 0.020, "hair", 0.016),
-                                                    (0.585, 0.024, "teal", 0.036)]):
-            j = rng.uniform(-0.006, 0.006, 3)
-            out = 0.066 + j[0] - (0.012 if mat == "teal" else 0.0)
-            pts = [base + [0, 0, back * 0.3],
-                   base + [sg * 0.030, -0.022, 0.006 + back * 0.5],
-                   base + [sg * out * 0.85, -0.062 + j[1], 0.012 + back],
-                   base + [sg * out, -0.108, 0.014 + back]]
+        for k, (y_end, w, mat, back, out) in enumerate([(0.800, 0.022, "hair", 0.004, 0.046), (0.770, 0.018, "hair", 0.016, 0.050)]):
+            j = rng.uniform(-0.004, 0.004, 3)
+            out = out + j[0]
+            if mat == "teal":  # 青緑は黒い房の裏、あごの高さから出す
+                pts = [base + [sg * out * 0.55, -0.075, 0.010 + back * 0.6],
+                       base + [sg * out * 0.85, -0.090 + j[1], 0.012 + back],
+                       base + [sg * out, -0.115, 0.014 + back]]
+            else:
+                pts = [base + [0, 0, back * 0.3],
+                       base + [sg * 0.024, -0.022, 0.006 + back * 0.5],
+                       base + [sg * out * 0.85, -0.062 + j[1], 0.012 + back],
+                       base + [sg * out, -0.108, 0.014 + back]]
             # 肩より下は肩の外側をまっすぐ下り、毛先だけ小さく波打たせる
             for y in np.linspace(base[1] - 0.15, y_end, 4 if y_end < 0.80 else 2):
                 wave = 0.005 * np.sin((base[1] - y) * 60 + k)
@@ -271,11 +275,18 @@ def hair(c):
             tt = np.linspace(0, 1, n)
             widths = w * (0.7 + 0.3 * np.minimum(1, tt * 4)) * (1 - 0.9 * np.clip((tt - 0.75) / 0.25, 0, 1))
             c.strand(path, widths, 0.005, sides, mat, skin=c.hair_chain(path, base[1] - 0.03, 3, w * 0.6))
-    # 後ろ髪（肩甲骨くらいまで）：前からは房の陰に隠れる範囲だけ
+    # 後ろ髪：外側の黒は肩甲骨まで。その内側は青緑一色で、腰まで届く（黒の下から青緑がのぞく）
     for th in np.linspace(2.0, np.pi, 4):
         for sg in ((1, -1) if th < np.pi - 1e-3 else (1,)):
             c.drape("hair", sg * th, 0.72 + rng.uniform(-0.02, 0.02), 0.058,
                     flare=0.04, pointy=True, bones=3)
+    # 内側の青緑は黒の裏から始め、横寄りほど低い所（あごの下）から出す。頭の上や顔の横に青緑を出さず、
+    # 肩から下で体の両脇と背中に見える（公式の立ち絵では腰の高さまで左右に見える）
+    for th in np.linspace(1.9, np.pi, 6):
+        for sg in ((1, -1) if th < np.pi - 1e-3 else (1,)):
+            e0 = -0.15 - 0.35 * (np.pi - th) / (np.pi - 1.9)
+            c.drape("teal", sg * th, 0.585 + rng.uniform(-0.015, 0.015), 0.050, thick=0.006, e0=e0,
+                    flare=0.035, pointy=True, bones=3, scale=(1.03, 1.02, 1.04), clearance=(0.096, 0.084, 0.068))
     # 頭の両側の小さな結い髪と陰陽玉の髪飾り
     for sg in (1, -1):
         d = Head.dir(sg * 1.05, 0.80)

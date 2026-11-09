@@ -70,18 +70,26 @@ def build(out_dir):
 
 
 def hair(c):
+    """おんJwiki のフェリス保管庫の絵に多い形：あご〜首までのやわらかいボブ。頭に沿って下り、毛先は少し内へ入って細かくとがる。
+    前髪はぎざぎざに分かれて眉の上まで、目と目の間に少し長い束。顔の横の髪は頬からあごまで。"""
     c.hair_cap("hair")
-    # 原画のように髪は大きなかたまりで描き、細い束は並べない。
-    # 眉の上まで下りる、毛先のとがった前髪：太い束 7 本（毛先の高さは目から決める）
+    rng = np.random.default_rng(11)
+    # 前髪：先のとがった束 7 本。真ん中の 1 本だけ目と目の間まで長い
     top = c.eye["pitch"] + 0.44
-    for th in np.linspace(-0.90, 0.90, 7):
-        c.bang("hair", th, top - 0.14 * abs(th) + 0.03 * np.sin(th * 9), 0.0300, e_start=1.18, pointy=True,
-               lift_end=1.055, sway=0.26 * th)
-    # 短いボブ：横は口の高さ、後ろはうなじで切れ、毛先は外へはねる。目尻より外から始める
-    for th in np.linspace(1.35, np.pi, 5):
+    for k, th in enumerate(np.linspace(-0.78, 0.78, 7)):
+        e_end = top - 0.10 * abs(th) + 0.025 * np.sin(th * 11) - (0.10 if k == 3 else 0.0)
+        c.bang("hair", th, e_end, 0.0290, e_start=1.18, pointy=True, lift_end=1.045, sway=0.18 * th)
+    # 顔の横の髪：目尻の外から頬の横を下り、あごの高さでとがって終わる
+    for sg in (1, -1):
+        for th, e_end, w in [(1.08, c.eye["pitch"] - 0.42, 0.0200), (1.24, c.eye["pitch"] - 0.50, 0.0230)]:
+            c.bang("hair", sg * th, e_end, w, thick=0.0060, e_start=1.20, pointy=True, lift_end=1.035, sway=sg * 0.05)
+    # ボブ：頭のいちばん広い所からまっすぐ下ろし、毛先へ向かって少し内へ丸める（肩をよけて外へ広げない）。
+    # 横はあごの高さ、後ろはうなじの少し下まで。束を重ねて切れ目のない面にする
+    for th in np.linspace(1.40, np.pi, 7):
         for sg in ((1, -1) if th < np.pi - 1e-3 else (1,)):
-            y_end = 0.858 - 0.016 * (th - 1.35) / (np.pi - 1.35)
-            c.drape("hair", sg * th, y_end, 0.056, flare=0.0, pointy=True, splay=0.35, wave=0.003)
+            y_end = 0.856 - 0.010 * (th - 1.40) / (np.pi - 1.40) + rng.uniform(-0.004, 0.004)
+            c.drape("hair", sg * th, y_end, 0.050, thick=0.0075, flare=0.0, pointy=True, wave=0.002,
+                    clearance=(0.0, 0.0, 0.0), tuck=0.14)
 
 
 def hat(c):

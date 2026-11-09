@@ -1217,22 +1217,27 @@ class Character:
         self.strand(path, w, thick, sides, mats or mat, blunt=False)
 
     def drape(self, mat, theta, y_end, width, thick=0.007, e0=1.05, flare=0.10, pointy=True,
-              scale=(1.06, 1.04, 1.07), mats_fn=None, clearance=(0.100, 0.090, 0.074), wave=0.0, bones=0, splay=0.0):
+              scale=(1.06, 1.04, 1.07), mats_fn=None, clearance=(0.100, 0.090, 0.074), wave=0.0, bones=0, splay=0.0,
+              tuck=0.0):
         """頭から垂れ下がる髪の束。体（肩・胸）をよけて外側に広がる。bones を渡すと物理で揺れる。
-        splay はあごの高さから下へ行くほど外へ開く量（姫毛を顔から離して広げる）。"""
+        splay はあごの高さから下へ行くほど外へ開く量（姫毛を顔から離して広げる）。
+        tuck は頭の真ん中の高さから毛先へ向かって内へ丸める割合（ボブの毛先を首の方へ入れる）。
+        短い髪で肩をよける必要がないときは clearance=(0, 0, 0) にする（頭の一番広い所からまっすぐ下ろす）。"""
         c, r = self.hair_surface(scale)
         h = np.array([np.sin(theta), 0.0, -np.cos(theta)])
         pts = []
-        for phi in np.linspace(e0, 0.0, 8, endpoint=False):
+        # 頭の面に沿って e0 の高さから頭の真ん中の高さまで下りる（e0 が真ん中より下なら、そこから下へだけ下ろす）
+        for phi in np.linspace(e0, 0.0, 8, endpoint=False) if e0 > 0 else [e0]:
             d = np.array([np.sin(theta) * np.cos(phi), np.sin(phi), -np.cos(theta) * np.cos(phi)])
             pts.append(c + d * r)
         req = 1.0 / np.sqrt((np.sin(theta) / r[0]) ** 2 + (np.cos(theta) / r[2]) ** 2)
         b = clearance[1] if np.cos(theta) > 0 else clearance[2]
-        rcl = 1.0 / np.sqrt((np.sin(theta) / clearance[0]) ** 2 + (np.cos(theta) / b) ** 2)
-        ys = np.linspace(c[1], y_end, 16)
+        rcl = 1.0 / np.sqrt((np.sin(theta) / max(clearance[0], 1e-6)) ** 2 + (np.cos(theta) / max(b, 1e-6)) ** 2)
+        ys = np.linspace(min(c[1], pts[-1][1] - 0.004), y_end, 16)
         for i, y in enumerate(ys):
             t = 1 - smoothstep(SHOULDER_Y + 0.01, c[1], y)
             rad = req + (max(req, rcl * 1.06) - req) * t + flare * max(0.0, SHOULDER_Y - y) + splay * max(0.0, c[1] - 0.06 - y)
+            rad *= 1.0 - tuck * smoothstep(c[1], y_end, y) ** 1.5
             wv = wave * np.sin((c[1] - y) * 40 + theta * 3) * min(1.0, (c[1] - y) * 8)
             pts.append(np.array([c[0], y, c[2]]) + h * (rad + wv))
         path = catmull(pts, 30)
