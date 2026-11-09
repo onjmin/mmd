@@ -3,6 +3,7 @@
 import numpy as np
 
 from . import head_shape as _HS
+from .textures import eye_outline
 from . import pmx
 from .builder import _merge_seams
 from .geom import (UP, MeshData, catmull, ellipsoid, loft, norm, ring, rot_axes, smoothstep, tube, vertex_normals, TAU)
@@ -326,10 +327,26 @@ def _mix_c(a, b, t):
     return np.asarray(a, float) * (1 - t) + np.asarray(b, float) * t
 
 
+# 目の輪郭（目の板の (A, B) 単位）を中心から見た角度ごとの半径。くぼみをこの形で彫る
+_EO = eye_outline()
+_EO_T = np.arctan2(_EO[:, 1], _EO[:, 0])
+_EO_ORDER = np.argsort(_EO_T)
+_EO_T, _EO_R = _EO_T[_EO_ORDER], np.hypot(_EO[:, 0], _EO[:, 1])[_EO_ORDER]
+
+
+def _eye_radius(a, b):
+    """点 (a, b) が目の輪郭の何倍の所にあるか（輪郭の上で 1）。"""
+    t = np.arctan2(b, a)
+    R = np.interp(t, _EO_T, _EO_R, period=2 * np.pi)
+    return np.hypot(a, b) / np.maximum(R, 1e-6)
+
+
 # 目の板：顔の面から奥へ下げる量・板の向き（目の向きの何割外を向くか）・板の裏で肌を下げる量
 EYE_INSET = 0.0012
 EYE_TURN = 0.40
 EYE_SOCKET_DEPTH = 0.0006
+EYE_DOME = 0.0010  # 目の板の真ん中のふくらみ（眼球のゆるい丸み）
+EYE_LID = 0.0016   # 上まぶたの帯の盛り上がり
 
 
 class Head:
@@ -382,19 +399,23 @@ class Head:
         p = np.stack([rho * np.sin(phi), y, self.zc - rho * np.cos(phi)], -1)
         return self._carve(p)
 
-    def add_socket(self, p0, n, e1, rx, ry, depth, rim=1.5):
+    def add_socket(self, p0, n, e1, rx, ry, depth, rim=1.30, lid=0.0):
         """目のくぼみ：目の板（p0 を通り n を向く平面、横 e1・縦 UP に半径 rx・ry）の裏へ、肌を depth だけ下げる。
-        板の外へ rim 倍の所までなだらかに戻し、まぶたの縁にする。"""
-        self.sockets.append((np.asarray(p0, float), np.asarray(n, float), np.asarray(e1, float), rx, ry, depth, rim))
+        くぼみの形は目の輪郭（台形）どおりで、外へ rim 倍の所までなだらかに戻す。
+        上の縁には lid だけ外へ盛り上がる帯（上まぶた）を付け、目の上にかぶさる段にする。"""
+        self.sockets.append((np.asarray(p0, float), np.asarray(n, float), np.asarray(e1, float), rx, ry, depth, rim, lid))
 
     def _carve(self, p):
-        for p0, n, e1, rx, ry, depth, rim in getattr(self, "sockets", []):
+        for p0, n, e1, rx, ry, depth, rim, lid in getattr(self, "sockets", []):
             rel = p - p0
             a, b, d = rel @ e1 / rx, rel[..., 1] / ry, rel @ n
-            r = (np.abs(a) ** 3 + np.abs(b) ** 3) ** (1 / 3)  # 丸みのある四角（台形の目の角がはみ出さない）
+            r = _eye_radius(a, b)
             w = 1.0 - smoothstep(1.0, rim, r)
             push = np.maximum(d + depth, 0.0) * w * (d > -4 * depth)
-            p = p - push[..., None] * n
+            # 上まぶたの帯：目の上の縁のすぐ外で外へふくらむ（目頭・目尻の方は細る）
+            top = smoothstep(0.15, 0.7, b / np.maximum(np.hypot(a, b), 1e-9))
+            ridge = lid * np.exp(-((r - 1.12) / 0.13) ** 2) * top * (d > -4 * depth)
+            p = p - push[..., None] * n + ridge[..., None] * n
         return p
 
     def pitch_at(self, h, yaw=0.0):
@@ -544,7 +565,7 @@ class Character:
         # 斜めから見ても目は平らな楕円として縮むだけで、頬の丸みに巻きつかない
         for _, _, s in SIDES:
             p0, n, e1 = self.eye_frame(s)
-            hd.add_socket(p0, n, e1, self.eye["rx"] * 1.08, self.eye["ry"] * 1.08, EYE_SOCKET_DEPTH)
+            hd.add_socket(p0, n, e1, self.eye["rx"] * 1.04, self.eye["ry"] * 1.04, EYE_SOCKET_DEPTH, lid=EYE_LID)
         m = model
         m.default_toon_tex = tex.toon("toon_cloth.png", (0.82, 0.80, 0.89))
         m.material("skin", "肌", skin_color, toon_tex=tex.toon("toon_skin.png", (1.0, 0.85, 0.80)))
@@ -1008,8 +1029,11 @@ class Character:
             p0, n_eye, e1_eye = self.eye_frame(s)
 
             def plate(rows, off):
-                """平らな目の板（顔の曲面に貼らない）。"""
-                rings = [p0 + r[:, :1] * e1_eye + r[:, 1:2] * UP + n_eye * (off * 0.085) for r in rows]
+                """目の板（顔の曲面に貼らない）。真ん中だけ眼球のようにゆるくふくらませる。"""
+                def dome(r):
+                    q = np.clip(1 - (r[:, 0] / rx) ** 2 - (r[:, 1] / ry) ** 2, 0, None)
+                    return (EYE_DOME * q + off * 0.085)[:, None]
+                rings = [p0 + r[:, :1] * e1_eye + r[:, 1:2] * UP + n_eye * dome(r) for r in rows]
                 return _flat_loft(rings, n_eye, False)
 
             for mat, rows, off, bone in layers:
