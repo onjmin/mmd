@@ -23,7 +23,7 @@ KH_YC, KH_RX, KH_RY = 0.746, 0.036, 0.0115
 def build(out_dir):
     m = Model("束音ロゼ", "Tabane Roze", "束音ロゼ（非公式・二次創作モデル）", 165)
     c = Character(m, tex=TextureSet(out_dir), hair_color=HAIR, skin_color=(1.0, 0.86, 0.76), eye_color=(0.12, 0.62, 0.46), bust=1.24,
-                  eye=dict(yaw=0.530, h=0.388, rx=0.0205, ry=0.0150, top=0.88, iris=0.63, iris_in=0.21),
+                  eye=dict(yaw=0.570, h=0.376, rx=0.0225, ry=0.0118, top=0.88, iris=0.56, iris_in=0.28),
                   mouth=dict(rx=0.0080, ry=0.0009, smile=1.0, h=0.125, nose_h=0.245))
     m.material("black", "服", BLACK, toon=0)
     m.material("red", "赤", RED, toon=0)

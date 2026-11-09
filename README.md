@@ -37,6 +37,8 @@ python serve.py
 - 「物理」のチェックを外すと髪やスカートが揺れなくなる
 - `viewer/?m=feris&motion=run&at=0.4` のように開くと、その動きの 0.4 秒目で止まる（見比べや記録用）
 
+ブラウザなしで正面の顔を PNG にするなら `python -m mmdgen.render feris out.png bare`（`bare` は髪と服を消して輪郭と目を見る、`face` は髪あり）。
+
 ## 利用規約について
 
 二次創作の非公式モデル。各キャラの公式規約に従うこと。

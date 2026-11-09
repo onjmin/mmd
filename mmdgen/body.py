@@ -209,12 +209,13 @@ def ear(c, n, up, back, a=0.0090, b=0.0155, K=11, J=44):
     return MeshData(V, faces[~inner]), MeshData(V, faces[inner])
 
 
-# 頭の形：あご先 0〜頭頂 1 の高さごとの水平断面。既製アニメ・MMDモデル（初音ミク・N4D等）の頭部の黄金比と
-# あご先〜頬のふっくら丸みのある輪郭（2階差分が常に負になる滑らかな凸曲線で、尖り顎や逆三角形にならない美少女輪郭）を正規化した値。
+# 頭の形：あご先 0〜頭頂 1 の高さごとの水平断面。既製アニメ・MMDモデル（初音ミク・N4D等）の頭部を正規化した値。
+# 横幅は目の高さで頭の高さの 0.75 倍に抑え（広いと顔が横に長く見える）、頬から顎先へはほぼまっすぐ細っていく
+# （2階差分が負の滑らかな凸曲線なので、頬は張らず、尖り顎や逆三角形にもならない）。
 HEAD_H = [0.00, 0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45, 0.50,
           0.55, 0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90, 0.95, 1.00]
-HEAD_W = [0.052, 0.156, 0.236, 0.298, 0.346, 0.380, 0.400, 0.410, 0.416, 0.419, 0.420,
-          0.420, 0.418, 0.415, 0.408, 0.396, 0.372, 0.344, 0.307, 0.243, 0.150]
+HEAD_W = [0.043, 0.119, 0.185, 0.242, 0.290, 0.328, 0.353, 0.367, 0.373, 0.376, 0.377,
+          0.377, 0.375, 0.372, 0.367, 0.356, 0.335, 0.310, 0.276, 0.218, 0.135]
 HEAD_F = [0.318, 0.346, 0.372, 0.388, 0.395, 0.390, 0.386, 0.395, 0.405, 0.415, 0.436,
           0.447, 0.447, 0.440, 0.437, 0.417, 0.414, 0.390, 0.329, 0.260, 0.145]
 HEAD_B = [0.09, 0.16, 0.236, 0.293, 0.347, 0.377, 0.399, 0.426, 0.442, 0.45, 0.455,
@@ -384,7 +385,7 @@ class Character:
         self.eye_color = np.array(eye_color, float)
         self.bust = bust
         # 目・鼻・口の高さは、あご先からの高さ（頭の肌の高さ比）で決める（MMD美少女モデルの頭部の黄金比：目は下半分に大きく、瞳は目頭際に寄せて内側の白目をほぼゼロにする）
-        self.eye = dict(yaw=0.530, h=0.388, rx=0.0205, ry=0.0150, top=0.88, tilt=0.0, iris=0.63, iris_in=0.21)
+        self.eye = dict(yaw=0.530, h=0.388, rx=0.0215, ry=0.0110, top=0.88, tilt=0.0, iris=0.56, iris_in=0.28)
         self.eye.update(eye or {})
         self.eye["pitch"] = self.head.pitch_at(self.eye["h"], self.eye["yaw"])
         self.mouth = dict(rx=0.0080, ry=0.0010, smile=1.0, open_bottom=1.0, h=0.125, nose_h=0.245, fang=False)
@@ -773,8 +774,9 @@ class Character:
         # 3 層の板の範囲（A は rx 単位で目頭 - → 目尻 +、B は ry 単位で上 +）。テクスチャは同じ輪郭をこの範囲に描く
         k = E["rx"] / E["ry"]
         ext = {"eye_white": (-1.0, 1.0, -1.0, 1.0),
-               "iris": (-E["iris_in"] - E["iris"], -E["iris_in"] + E["iris"], -0.84, 1.0),
-               "lash": (-1.12, 1.36, -1.0, 1.55)}
+               # 瞳は縦長で白目より背が高く、上はまつ毛、下は下の縁で切られる
+               "iris": (-E["iris_in"] - E["iris"], -E["iris_in"] + E["iris"], -1.02, 1.55),
+               "lash": (-1.14, 1.45, -1.0, 1.85)}
         m.material("eye_white", "白目", (1, 1, 1), tex=T.eye_white(ext["eye_white"], k), **noedge)
         m.material("iris", "瞳", self.eye_color, tex=T.iris("iris.png", self.eye_color, ext["iris"], k), **noedge)
         m.material("lash", "まつ毛", (0.1, 0.06, 0.07), tex=T.lash(ext["lash"], k), **noedge)
@@ -845,8 +847,8 @@ class Character:
                 m.add_morph_part("まばたき", base, blink)
                 m.add_morph_part("笑い", base, h.decal(d0, remap_ab(rows, closer(0.28, **shut)), off, closed=False, plane_dir=pdir)[0])
                 m.add_morph_part("ウィンク" if s > 0 else "ウィンク右", base, blink)
-            bd = Head.dir(s * (E["yaw"] * 0.92), E["pitch"] + 0.25)
-            bpdir = Head.dir(s * E["yaw"] * 0.38, E["pitch"] + 0.20)
+            bd = Head.dir(s * (E["yaw"] * 0.92), E["pitch"] + 0.29)
+            bpdir = Head.dir(s * E["yaw"] * 0.38, E["pitch"] + 0.24)
             brow_rows = plane(rx * 0.88, -0.0036, 0.0036, s)
             b_base = m.add("brow", h.decal(bd, brow_rows, 0.0085, closed=False, plane_dir=bpdir), m.skin_fixed("頭"))
             # 眉の表情モーフ（にこり・怒り・困る・まばたき・笑い）

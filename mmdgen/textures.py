@@ -19,14 +19,14 @@ def _mix(a, b, t):
 # ---- 目の形：白目・瞳・まつ毛が同じ輪郭を共有する ----
 # 座標 (A, B) は目の板の上の位置。A は rx 単位で目頭 -1 → 目尻 +1、B は ry 単位で上が +。
 # 白目の板は A, B とも ±1、絵の輪郭はその 92%（measure.py が見える目の端をそう数える）。
-# 既製モデル（Tda式ミク・キズナアイ系）の目は丸ではなく角のある形：
-# 上の縁は目頭の角から目尻側の頂点へほぼまっすぐ斜めに上がり、頂点は真ん中より目尻寄り。
-# 目尻の上に角があり、外側の縁はほぼ縦に下りて下で丸く回り込む。下の縁は平ら、目頭側の縁もほぼ縦。
-# 同じ点を 2 回置いた所は角として残る（_chaikin が角を丸めきらない）。
-EYE_CTRL = [(-0.92, 0.12), (-0.58, 0.64), (-0.16, 0.89), (0.30, 0.93), (0.70, 0.82), (0.70, 0.82),
-            (0.92, 0.36), (0.92, -0.20), (0.72, -0.72), (0.30, -0.93), (-0.30, -0.92), (-0.78, -0.74),
-            (-0.93, -0.30), (-0.92, 0.12)]
-EYE_CORNER = (0.70, 0.82)  # 目尻の上の角（まつ毛がいちばん太く、ハネが出る所）
+# 既製モデル（Tda式ミク系）の目は丸ではなく、上が広く下が狭い台形：
+# 上の縁はほぼまっすぐで目尻へ少し上がり、目尻の上に鋭い角。外側の縁はそこから内へ斜めに短く下り、
+# 下の縁は目尻へ向かって上がる（目頭側の縦の縁は長く、目尻側は短い）。目頭は上の縁の端で尖る。
+# 横:縦はおよそ 2:1（rx/ry と合わせて決める）。同じ点を 2 回置いた所は角として残る（_chaikin が角を丸めきらない）。
+EYE_CTRL = [(-0.94, 0.55), (-0.80, 0.76), (-0.45, 0.88), (0.10, 0.93), (0.55, 0.96), (0.88, 0.95), (0.88, 0.95),
+            (0.80, 0.50), (0.68, 0.00), (0.58, -0.45), (0.46, -0.66), (0.20, -0.80), (-0.15, -0.90),
+            (-0.52, -0.96), (-0.76, -0.93), (-0.87, -0.62), (-0.92, -0.10), (-0.94, 0.55)]
+EYE_CORNER = (0.88, 0.95)  # 目尻の上の角（まつ毛がいちばん太く、ハネが出る所）
 
 
 def _chaikin(p, it=4):
@@ -46,9 +46,9 @@ def eye_outline():
 
 def eye_top_arc(k):
     """上まつ毛の通り道：目頭の角の少し先（細く尖って終わる所）から上の縁を通り、
-    目尻の角を回って外側の縁を下の端近くまで包む。"""
+    目尻の角を回って外側の縁を半分ほど下まで包む。"""
     o = eye_outline()
-    end = np.argmax((o[:, 0] > 0.4) & (o[:, 1] < -0.74))
+    end = np.argmax((o[:, 0] > 0.4) & (o[:, 1] < -0.25))
     arc = o[:end + 1]
     d = (arc[0] - arc[3]) * [k, 1.0]
     tail = arc[0] + d / np.linalg.norm(d) * 0.12 / [k, 1.0]
@@ -138,9 +138,9 @@ class TextureSet:
         bot = np.where(inside.any(0), n - 1 - inside[::-1].argmax(0), 0)[None, :]
         px = (n - 1) / (ext[3] - ext[2])  # ry 1 つぶんの画素数
         depth, near_bot = (rows - top) / px, (bot - rows) / px
-        shade = np.clip(1 - depth / 0.62, 0, 1) ** 1.5
-        col = np.array([1.0, 1.0, 1.0]) * (1 - shade[..., None]) + np.array([0.78, 0.80, 0.90]) * shade[..., None]
-        edge = np.clip(1 - near_bot / 0.10, 0, 1) ** 2 * 0.35
+        shade = np.clip(1 - depth / 0.90, 0, 1) ** 1.3
+        col = np.array([1.0, 1.0, 1.0]) * (1 - shade[..., None]) + np.array([0.70, 0.72, 0.84]) * shade[..., None]
+        edge = np.clip(1 - near_bot / 0.14, 0, 1) ** 2 * 0.35
         col = col * (1 - edge[..., None]) + np.array([0.70, 0.66, 0.70]) * edge[..., None]
         img = Image.fromarray((np.dstack([np.clip(col, 0, 1), m]) * 255).astype(np.uint8), "RGBA")
         return self.save(img.resize((256, 256), Image.LANCZOS), name)
@@ -162,7 +162,7 @@ class TextureSet:
         bright_col = np.clip(color * 1.25 + 0.38, 0.0, 1.0)
         rim_col = np.clip(color * 0.22 + np.array([0.02, 0.03, 0.10]), 0.0, 1.0)
 
-        t_upper = np.clip((y - 0.30) / 0.26, 0.0, 1.0)
+        t_upper = np.clip((y - 0.28) / 0.28, 0.0, 1.0)
         t_upper = t_upper * t_upper * (3 - 2 * t_upper)
         col = top_shade * (1 - t_upper[..., None]) + mid_col * t_upper[..., None]
         # 下半分の三日月形の明るみ
@@ -189,14 +189,14 @@ class TextureSet:
         img = Image.fromarray((np.clip(col, 0, 1) * 255).astype(np.uint8), "RGB")
         d = ImageDraw.Draw(img)
         # 光：板の上部はまつ毛に隠れるので、見える高さに置く
-        d.ellipse([n * 0.22, n * 0.26, n * 0.42, n * 0.43], fill=(255, 255, 255))
+        d.ellipse([n * 0.12, n * 0.28, n * 0.42, n * 0.41], fill=(255, 255, 255))  # まつ毛の際の横長の光
         d.ellipse([n * 0.60, n * 0.66, n * 0.74, n * 0.78], fill=(250, 250, 250))
         d.ellipse([n * 0.66, n * 0.30, n * 0.74, n * 0.37], fill=(235, 235, 235))
         img.putalpha(Image.fromarray((alpha * 255).astype(np.uint8)))
         return self.save(img.resize((256, 256), Image.LANCZOS), name)
 
     def lash(self, ext, k, name="lash.png", color=(0.05, 0.04, 0.05)):
-        """上まつ毛：白目の上の縁に沿う帯。太さは目の高さの 1 割強で、
+        """上まつ毛：白目の上の縁に沿う帯。太さは白目の高さの 2 割弱で、
         目頭の少し上で細い鉤として始まり、上の縁で太く、目尻の角でいちばん太くなって外側の縁を下の方まで包んで細る。
         目尻の角から外へ短いハネを 1 本。上に細い二重の線、下まぶたは目尻側の半分だけ淡い茶の線。"""
         n = 512 * S
@@ -208,22 +208,22 @@ class TextureSet:
         s /= s[-1]
         ic = int(np.argmin(np.linalg.norm(arc - EYE_CORNER, axis=1)))
         sc = s[ic]  # 目尻の角
-        th = np.interp(s, [0.00, 0.06, 0.15, 0.32, sc - 0.08, sc, sc + 0.12, sc + 0.26, 1.00],
-                          [0.00, 0.08, 0.15, 0.20, 0.23, 0.27, 0.21, 0.14, 0.00])
+        th = np.interp(s, [0.00, 0.06, 0.15, 0.32, sc - 0.08, sc, sc + (1 - sc) * 0.35, sc + (1 - sc) * 0.7, 1.00],
+                          [0.00, 0.17, 0.27, 0.32, 0.34, 0.40, 0.16, 0.07, 0.00])
         # 白目の縁に少しかぶせて隙間を出さない（両端は細く尖らせる）
-        inner = _offset(arc, -0.045 * np.clip(th / 0.10, 0, 1), k)
+        inner = _offset(arc, -0.06 * np.clip(th / 0.12, 0, 1), k)
         outer = _offset(arc, th, k)
         band = [tuple(p) for p in outer] + [tuple(p) for p in inner[::-1]]
         edge = _rgb(_mix(color, (0.30, 0.18, 0.17), 0.55))
         d.polygon(to_px(band), fill=edge)
         core_o = _offset(arc, th * 0.70, k)
-        core_i = _offset(arc, -0.03 * np.clip(th / 0.10, 0, 1), k)
+        core_i = _offset(arc, -0.04 * np.clip(th / 0.12, 0, 1), k)
         sel = (s > 0.03) & (s < 0.97)
         d.polygon(to_px([tuple(p) for p in core_o[sel][::-1]] + [tuple(p) for p in core_i[sel]]), fill=_rgb(color))
 
         # 目尻のハネ：上の縁が外側へ下りはじめる角から、横へ細く尖らせる
         i0, i1, im = (int(np.argmin(np.abs(s - t))) for t in (sc - 0.07, sc + 0.06, sc))
-        tip = outer[im] + np.array([0.30 / k, 0.02])
+        tip = outer[im] + np.array([0.34 / k, 0.08])
         base0, base1 = outer[i0] - (outer[i0] - arc[i0]) * 0.3, outer[i1] - (outer[i1] - arc[i1]) * 0.3
         q = np.linspace(0, 1, 12)[:, None]
         up = (1 - q) ** 2 * base0 + 2 * q * (1 - q) * ((base0 + tip) / 2 + [0.0, 0.03]) + q ** 2 * tip
@@ -232,14 +232,14 @@ class TextureSet:
 
         # 二重の線：まつ毛の上、目頭寄りから目尻手前まで細く
         sel = (s > 0.22) & (s < sc - 0.03)
-        crease = _offset(arc, th + 0.13, k)[sel]
+        crease = _offset(arc, th + 0.24, k)[sel]
         w = np.sin(np.linspace(0, np.pi, len(crease))) ** 0.6
         for a, b, ww in zip(crease[:-1], crease[1:], w[:-1]):
             d.line(to_px([tuple(a), tuple(b)]), fill=_rgb((0.36, 0.22, 0.20), 180), width=max(1, int(n * 0.007 * (0.4 + 0.6 * ww))))
 
         # 下まぶた：目尻側の下の縁に沿う淡い茶の線（目頭側は描かない）
         o = eye_outline()
-        lo = o[(o[:, 1] < -0.76) & (o[:, 0] > 0.0)]
+        lo = o[(o[:, 1] < -0.62) & (o[:, 0] > 0.0) & (o[:, 0] < 0.55)]
         lo = lo[np.argsort(-lo[:, 0])]
         w = np.sin(np.linspace(0, np.pi, len(lo))) ** 0.8
         for a, b, ww in zip(lo[:-1], lo[1:], w[:-1]):
