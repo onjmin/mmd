@@ -20,13 +20,13 @@ def _mix(a, b, t):
 # 座標 (A, B) は目の板の上の位置。A は rx 単位で目頭 -1 → 目尻 +1、B は ry 単位で上が +。
 # 白目の板は A, B とも ±1、絵の輪郭はその 92%（measure.py が見える目の端をそう数える）。
 # 既製モデル（Tda式ミク系）の目は丸ではなく、上が広く下が狭い台形：
-# 上の縁はほぼまっすぐで目尻へ少し上がり、目尻の上に鋭い角。外側の縁はそこから内へ斜めに短く下り、
+# 上の縁はほぼ水平で、目尻の角は少し下がる（上がるとつり目できつく見える）。外側の縁はそこから内へ斜めに短く下り、
 # 下の縁は目尻へ向かって上がる（目頭側の縦の縁は長く、目尻側は短い）。目頭は上の縁の端で尖る。
-# 横:縦はおよそ 2:1（rx/ry と合わせて決める）。同じ点を 2 回置いた所は角として残る（_chaikin が角を丸めきらない）。
-EYE_CTRL = [(-0.94, 0.55), (-0.80, 0.76), (-0.45, 0.88), (0.10, 0.93), (0.55, 0.96), (0.88, 0.95), (0.88, 0.95),
-            (0.80, 0.50), (0.68, 0.00), (0.58, -0.45), (0.46, -0.66), (0.20, -0.80), (-0.15, -0.90),
+# 横:縦はおよそ 1.8:1（rx/ry と合わせて決める）。同じ点を 2 回置いた所は角として残る（_chaikin が角を丸めきらない）。
+EYE_CTRL = [(-0.94, 0.55), (-0.80, 0.80), (-0.45, 0.93), (0.10, 0.96), (0.55, 0.93), (0.88, 0.84), (0.88, 0.84),
+            (0.84, 0.40), (0.72, -0.10), (0.60, -0.50), (0.46, -0.68), (0.20, -0.82), (-0.15, -0.91),
             (-0.52, -0.96), (-0.76, -0.93), (-0.87, -0.62), (-0.92, -0.10), (-0.94, 0.55)]
-EYE_CORNER = (0.88, 0.95)  # 目尻の上の角（まつ毛がいちばん太く、ハネが出る所）
+EYE_CORNER = (0.88, 0.84)  # 目尻の上の角（まつ毛がいちばん太く、ハネが出る所）
 
 
 def _chaikin(p, it=4):
@@ -138,8 +138,8 @@ class TextureSet:
         bot = np.where(inside.any(0), n - 1 - inside[::-1].argmax(0), 0)[None, :]
         px = (n - 1) / (ext[3] - ext[2])  # ry 1 つぶんの画素数
         depth, near_bot = (rows - top) / px, (bot - rows) / px
-        shade = np.clip(1 - depth / 0.90, 0, 1) ** 1.3
-        col = np.array([1.0, 1.0, 1.0]) * (1 - shade[..., None]) + np.array([0.70, 0.72, 0.84]) * shade[..., None]
+        shade = np.clip(1 - depth / 1.10, 0, 1) ** 1.2
+        col = np.array([0.95, 0.95, 0.98]) * (1 - shade[..., None]) + np.array([0.70, 0.72, 0.84]) * shade[..., None]
         edge = np.clip(1 - near_bot / 0.14, 0, 1) ** 2 * 0.35
         col = col * (1 - edge[..., None]) + np.array([0.70, 0.66, 0.70]) * edge[..., None]
         img = Image.fromarray((np.dstack([np.clip(col, 0, 1), m]) * 255).astype(np.uint8), "RGBA")
@@ -223,7 +223,7 @@ class TextureSet:
 
         # 目尻のハネ：上の縁が外側へ下りはじめる角から、横へ細く尖らせる
         i0, i1, im = (int(np.argmin(np.abs(s - t))) for t in (sc - 0.07, sc + 0.06, sc))
-        tip = outer[im] + np.array([0.34 / k, 0.08])
+        tip = outer[im] + np.array([0.30 / k, -0.06])  # 外へ、少し下向きに
         base0, base1 = outer[i0] - (outer[i0] - arc[i0]) * 0.3, outer[i1] - (outer[i1] - arc[i1]) * 0.3
         q = np.linspace(0, 1, 12)[:, None]
         up = (1 - q) ** 2 * base0 + 2 * q * (1 - q) * ((base0 + tip) / 2 + [0.0, 0.03]) + q ** 2 * tip
@@ -256,10 +256,10 @@ class TextureSet:
         for t in ts:
             u = 0.06 + 0.88 * t
             y_c = 0.56 - 0.22 * np.sin(np.pi * (t ** 0.85))
-            thick = 0.16 * (np.sin(np.pi * t) ** 0.75) * (1.0 - 0.35 * t)
+            thick = 0.09 * (np.sin(np.pi * t) ** 0.75) * (1.0 - 0.35 * t)
             pts_top.append((u * w, (y_c - thick) * h))
             pts_bot.append((u * w, (y_c + thick) * h))
-        d.polygon(pts_top + pts_bot[::-1], fill=_rgb(color, 235))
+        d.polygon(pts_top + pts_bot[::-1], fill=_rgb(color, 210))
         return self.save(img.resize((256, 64), Image.LANCZOS), name)
 
     def nose(self, name="nose.png", skin_color=(1.0, 0.86, 0.76)):
@@ -316,7 +316,7 @@ class TextureSet:
             th = (0.058 + 0.016 * np.exp(-((x / 0.35) ** 2))) * env
             pts_top.append((u * w, (y - th * 0.48) * h))
             pts_bot.append((u * w, (y + th * 0.52) * h))
-        d.polygon(pts_top + pts_bot[::-1], fill=_rgb(color, 235))
+        d.polygon(pts_top + pts_bot[::-1], fill=_rgb(color, 210))
         return self.save(img.resize((256, 128), Image.LANCZOS), name)
 
     def mouth_interior(self, name="mouth_in.png", fang=False):

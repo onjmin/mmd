@@ -385,7 +385,7 @@ class Character:
         self.eye_color = np.array(eye_color, float)
         self.bust = bust
         # 目・鼻・口の高さは、あご先からの高さ（頭の肌の高さ比）で決める（MMD美少女モデルの頭部の黄金比：目は下半分に大きく、瞳は目頭際に寄せて内側の白目をほぼゼロにする）
-        self.eye = dict(yaw=0.690, h=0.420, rx=0.0245, ry=0.0080, top=0.88, tilt=0.0, iris=0.56, iris_in=0.28)
+        self.eye = dict(yaw=0.690, h=0.420, rx=0.0275, ry=0.0107, top=0.88, tilt=0.0, iris=0.56, iris_in=0.28)
         self.eye.update(eye or {})
         self.eye["pitch"] = self.head.pitch_at(self.eye["h"], self.eye["yaw"])
         self.mouth = dict(rx=0.0080, ry=0.0010, smile=1.0, open_bottom=1.0, h=0.137, nose_h=0.232, fang=False)
