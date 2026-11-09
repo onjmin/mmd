@@ -225,7 +225,7 @@ class TextureSet:
 
         # 目尻のハネ：上の縁が外側へ下りはじめる角から、横へ細く尖らせる
         i0, i1, im = (int(np.argmin(np.abs(s - t))) for t in (sc - 0.07, sc + 0.06, sc))
-        tip = outer[im] + np.array([0.30 / k, -0.06])  # 外へ、少し下向きに
+        tip = outer[im] + np.array([0.13 / k, -0.03])  # 外へ短く、少し下向きに（長いと顔の肌に根元が隠れ、離れた黒い点に見える）
         base0, base1 = outer[i0] - (outer[i0] - arc[i0]) * 0.3, outer[i1] - (outer[i1] - arc[i1]) * 0.3
         q = np.linspace(0, 1, 12)[:, None]
         up = (1 - q) ** 2 * base0 + 2 * q * (1 - q) * ((base0 + tip) / 2 + [0.0, 0.03]) + q ** 2 * tip

@@ -888,8 +888,9 @@ class Character:
         k = E["rx"] / E["ry"]
         ext = {"eye_white": (-1.0, 1.0, -1.0, 1.0),
                # 瞳は幅の 1.15 倍の縦長で、目の高さいっぱい。上はまつ毛、下は下の縁で切られる
+               # 中心を少し上げ、上まつ毛に軽くかかるようにする（白目が瞳を一周すると見開いた目に見える）
                "iris": (-E["iris_in"] - E["iris"], -E["iris_in"] + E["iris"],
-                        -0.02 - 1.15 * E["iris"] * k, -0.02 + 1.15 * E["iris"] * k),
+                        0.08 - 1.15 * E["iris"] * k, 0.08 + 1.15 * E["iris"] * k),
                "lash": (-1.14, 1.45, -1.0, 1.85)}
         m.material("eye_white", "白目", (1, 1, 1), tex=T.eye_white(ext["eye_white"], k), **noedge)
         m.material("iris", "瞳", self.eye_color, tex=T.iris("iris.png", self.eye_color, ext["iris"], k), **noedge)
