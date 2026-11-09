@@ -40,7 +40,15 @@ python serve.py
 ブラウザなしで正面の顔を PNG にするなら `python -m mmdgen.render feris out.png bare`（`bare` は髪と服を消して輪郭と目を見る、`face` は髪あり）。
 関数 `render()` は `yaw`（斜め・横から）と `clay=True`（色を消して凹凸だけ）も使える。
 
-顔の前半分の形は、美少女モデル（`models/tabane_roze_n4d/`）を `python -m mmdgen.head_scan` で輪切りにした表 `mmdgen/head_shape.py` から作る。
+頭の肌の形（顔・あご・後頭部・首の付け根）は、既製の MMD モデル「うか」の頭を `python -m mmdgen.head_scan` で一周輪切りにした表 `mmdgen/head_shape.py` から作る。
+測り直すときは「うか」を手元に置く（リポジトリには入れない）：
+
+```bash
+git clone --depth 1 https://github.com/mmdagent-ex/uka.git models/uka_ref
+python -m mmdgen.head_scan
+```
+
+頭の形の表は CG アバター「うか」（CC-BY 4.0）から作っている：CG-CA Uka (c) 2023-2024 by Nagoya Institute of Technology, Moonshot R&D Goal 1 Avatar Symbiotic Society
 
 ## 利用規約について
 

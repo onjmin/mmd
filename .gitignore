@@ -155,5 +155,6 @@ __pycache__/
 .tools/
 # Neural4D 由来のモデル（素材の再配布可否が不明なので公開しない）
 models/*_n4d/
+models/*_ref/
 # 公式の立ち絵（比較用。再配布しない）
 ref/
