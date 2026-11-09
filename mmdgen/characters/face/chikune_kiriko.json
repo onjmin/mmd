@@ -1,0 +1,17 @@
+{
+  "eye_size": 1.03,
+  "eye_aspect": 1,
+  "eye_spread": 1.08,
+  "eye_height": 0.375,
+  "eye_tilt": 0,
+  "iris_w": 1.08,
+  "iris_h": 0.99,
+  "iris_y": 0.01,
+  "pupil": 1.25,
+  "highlight": 0.98,
+  "lash": 1.03,
+  "lash_light": 1.55,
+  "white_shade": 1,
+  "face_width": 0.495,
+  "cheek": 0.06
+}
