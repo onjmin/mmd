@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from ..body import Character, SIDES, finish, joints
+from ..body import ARM_ANGLE, Character, SIDES, arm_dir, finish, joints
 from ..geom import loft, smoothstep
 from ..builder import Model
 from ..textures import TextureSet
@@ -18,17 +18,113 @@ TIP = (0.30, 0.74, 0.72)
 BOW = (0.38, 0.15, 0.11)
 
 
-def fur(path, r, closed=False, bumps=None, n=16):
-    """ファーの縁：毛のかたまりが並んだようにふくらみを付けた太い管。bumps はふくらみの数（既定は長さから決める）。"""
+def _noise(x, scale, seed, octaves=3):
+    """なめらかで繰り返さない凹凸（-1..1 程度）。x は長さ、scale はおおよその山の間隔。"""
+    rng = np.random.default_rng(seed)
+    x = np.asarray(x, float)
+    out = np.zeros_like(x)
+    for o in range(octaves):
+        f = TAU / scale * (1.0 + o * 0.83) * rng.uniform(0.85, 1.15)
+        out += np.sin(x * f + rng.uniform(0, TAU)) / (1 + o)
+    return out / 1.8
+
+
+def fur(path, r, closed=False, seed=0, n=18, rv=None, side=None):
+    """ファーの縁：毛足のふくらみが不規則に揺らぐ太い管（同じ玉が並んで数珠に見えないようにする）。
+    rv を渡すと断面を楕円にする（side 方向が r、直交方向が rv）。"""
     path = np.asarray(path, float)
     if closed:
         path = np.vstack([path, path[:1]])
     seg = np.linalg.norm(np.diff(path, axis=0), axis=1)
     t = np.concatenate([[0], np.cumsum(seg)])
-    k = bumps or max(4, int(round(t[-1] / (r * 1.6))))
-    bump = 1 + 0.16 * np.abs(np.sin(np.pi * k * t / t[-1]))
-    # 断面にも小さな毛の凹凸を付け、なめらかな筒に見えないようにする
-    return tube(path, r * bump, n=n, rmod=lambda a: 1 + 0.06 * np.sin(a * 7))
+    rng = np.random.default_rng(seed)
+    if closed:  # 継ぎ目でずれないよう、一周でちょうど繰り返す凹凸にする
+        k = max(3, int(round(t[-1] / (r * 3.0))))
+        x = t / t[-1] * TAU
+        bump = 1 + 0.07 * (np.sin(x * k + rng.uniform(0, TAU)) + 0.6 * np.sin(x * (k + 3) + rng.uniform(0, TAU))
+                           + 0.4 * np.sin(x * (2 * k - 1) + rng.uniform(0, TAU))) / 2.0
+        taper = 1.0
+    else:
+        bump = 1 + 0.07 * _noise(t, r * 3.0, seed)
+        taper = 0.55 + 0.45 * np.clip(np.minimum(t, t[-1] - t) / (r * 2.0), 0, 1)  # 端は細めて丸く終える
+    rr = r * bump * taper
+    p1, p2 = rng.uniform(0, TAU, 2)
+    return tube(path, rr, None if rv is None else rr * (rv / r), n=n, side=side,
+                rmod=lambda a: 1 + 0.035 * np.sin(a * 5 + p1) + 0.02 * np.sin(a * 8 + p2))
+
+
+def _smooth(y, k=5):
+    """1 次元の値をならす（端は伸ばす）。"""
+    pad = np.pad(y, k, mode="edge")
+    w = np.exp(-np.linspace(-2, 2, 2 * k + 1) ** 2)
+    return np.convolve(pad, w / w.sum(), mode="same")[k:-k]
+
+
+def a_skirt(y0, y1, r1_scale, pleats, depth, seed, n=240, steps=16, bulge=0.0):
+    """A ラインのひだスカート。太ももを避ける幅と円錐の幅のうち大きい方を高さ方向にならし、
+    腰のすぐ下が筒になって急に折れる形にしない。ひだの深さと幅は 1 本ずつ少し変える。"""
+    rng = np.random.default_rng(seed)
+    rx0, rz0, cz0 = parts.torso_r(y0, 1.06)
+    ys = np.linspace(y0, y1, steps)
+    sx, sz, cz = [], [], []
+    for y in ys:
+        t = (y0 - y) / (y0 - y1)
+        x0 = rx0 + (rx0 * r1_scale - rx0) * t ** 0.85 + bulge * np.sin(np.pi * t)
+        z0 = rz0 + (rx0 * r1_scale * 0.85 - rz0) * t ** 0.85 + bulge * np.sin(np.pi * t)
+        c = cz0 + 0.01 * t
+        x1, z1 = parts.clear_legs(y, x0, z0, c)
+        sx.append(x1); sz.append(z1); cz.append(c)
+    # 外へ押し出した所だけ持ち上げてから少しならす（細くはしない）
+    sx = np.maximum.accumulate(_smooth(np.maximum.accumulate(np.array(sx)), 3))
+    sz = np.maximum.accumulate(_smooth(np.maximum.accumulate(np.array(sz)), 3))
+    a = np.arange(n) / n * TAU
+    ph = a * pleats / 2 + 0.25 * np.sin(a * 3 + rng.uniform(0, TAU))  # ひだの間隔を少しずらす
+    amp = 1 + 0.35 * np.sin(a * 2 + rng.uniform(0, TAU)) * np.sin(a * 5 + rng.uniform(0, TAU))
+    rings, centers = [], []
+    for k, y in enumerate(ys):
+        t = k / (steps - 1)
+        r = 1 + depth * t * amp * np.abs(np.sin(ph))
+        ctr = np.array([0, y, cz[k]])
+        rings.append(ctr + np.stack([sx[k] * r * np.cos(a), np.zeros(n), sz[k] * r * np.sin(a)], 1))
+        centers.append(ctr)
+    return loft(rings, centers=centers)
+
+
+def puff_sleeve(s, t0, t1, seed, nt=72, na=72):
+    """ふくらんだ袖。肩は腕に沿い、ひじから下でふくらんで布が下へ垂れ、袖口の手前で細かく寄せて絞る。
+    しわは等間隔の輪にせず、向きと深さの違う数本を斜めに入れる。"""
+    rng = np.random.default_rng(seed)
+    j = joints(s)
+    d = arm_dir(s)
+    u = np.array([0, 0, 1.0])
+    v = np.array([s * np.sin(ARM_ANGLE), np.cos(ARM_ANGLE), 0])  # 腕に直交する上向き
+    tt = np.linspace(0, 1, nt)
+    a = np.linspace(0, TAU, na, endpoint=False)
+    prof = _smooth(np.interp(tt, [0, 0.12, 0.40, 0.66, 0.82, 0.93, 1.0],
+                             [0.038, 0.044, 0.053, 0.059, 0.057, 0.045, 0.033]), 4)
+    sag = _smooth(np.interp(tt, [0, 0.2, 0.7, 0.9, 1.0], [0.0, 0.002, 0.010, 0.008, 0.0]), 4)
+    T, A = np.meshgrid(tt, a, indexing="ij")
+    disp = np.zeros_like(T)
+    # 大きなしわ：ひじの内側と袖の下にたまる斜めの谷。山は広く、谷は細い
+    for _ in range(6):
+        tk = rng.uniform(0.22, 0.86)
+        ak = rng.choice([0.0, np.pi * 0.5, np.pi, np.pi * 1.5]) + rng.uniform(-0.6, 0.6)
+        da = np.angle(np.exp(1j * (A - ak)))
+        cover = np.exp(-(da / rng.uniform(0.9, 1.5)) ** 2)
+        x = T - tk - rng.uniform(-0.07, 0.07) * np.sin(da)
+        disp -= rng.uniform(0.05, 0.10) * np.exp(-(x / rng.uniform(0.018, 0.030)) ** 2) * cover
+    # 袖口の手前と肩の付け根は細かく寄せる（縦の細いひだ）。深さは不規則に
+    gather = np.clip((T - 0.80) / 0.17, 0, 1) ** 1.5 + 0.35 * np.clip((0.10 - T) / 0.10, 0, 1)
+    pl = np.abs(np.sin(A * 6.5 + 0.8 * np.sin(A * 2 + rng.uniform(0, TAU))))
+    disp += gather * (0.10 * pl - 0.05) * (0.7 + 0.3 * np.sin(A * 3 + rng.uniform(0, TAU)))
+    disp += 0.018 * _noise(A * 0.05 + T * 0.9, 0.18, seed + 1)  # わずかなよれ
+    rings, centers = [], []
+    for i, t in enumerate(tt):
+        c = j["腕"] + d * (t0 + (t1 - t0) * t) - v * sag[i]
+        r = prof[i] * (1 + disp[i])
+        rings.append(c + np.outer(np.cos(a) * r, u) + np.outer(np.sin(a) * r, v))
+        centers.append(c)
+    return loft(rings, centers=centers)
 
 
 def build(out_dir):
@@ -53,71 +149,80 @@ def build(out_dir):
     # ---- コート（公式の絵）：ゆったりしたショート丈。肩を覆い、前は開いて、裾へ広がる。しわとたるみを入れる ----
     a0, a1 = np.radians(-90 + 26), np.radians(270 - 26)
     rng = np.random.default_rng(5)
-    ph = rng.uniform(0, TAU, 4)
 
     def grow(y):  # 胴からの膨らみ：肩はぴったり、胸の下から裾へ広がる
         return 1.16 + 0.10 * float(np.clip((0.800 - y) / 0.03, 0, 1)) + 0.30 * smoothstep(0.735, 0.645, y)
 
-    def coat_ring(y, n=150, off=0.0):
+    # 垂れるひだ：胸や肩甲骨で支えられた所から下へ、幅と深さを増しながら落ちる。前身ごろは浅め
+    folds = []
+    for _ in range(9):
+        ak = rng.uniform(a0 + 0.35, a1 - 0.35)
+        front = np.exp(-(np.angle(np.exp(1j * (ak + np.pi / 2))) / 0.9) ** 2)
+        folds.append((ak, rng.uniform(0.73, 0.79), rng.uniform(0.025, 0.050) * (1 - 0.6 * front), rng.uniform(0.16, 0.30)))
+
+    def fold_at(a, y):
+        f = np.zeros_like(a)
+        for ak, ys0, dep, w in folds:
+            t = smoothstep(ys0, 0.645, y)
+            da = np.angle(np.exp(1j * (a - ak)))
+            f += dep * t ** 1.3 * np.exp(-(da / (w * (0.45 + 0.75 * t))) ** 2)
+        return f
+
+    def coat_ring(y, n=150):
         rx, rz, cz = parts.torso_r(y, grow(y))
         a = np.linspace(a0, a1, n)
-        t = smoothstep(0.80, 0.65, y)  # 下ほど深いしわ
-        fold = 1 + (0.012 + 0.040 * t) * (np.sin(a * 7 + ph[0] + y * 30) * 0.6 + np.sin(a * 13 + ph[1] - y * 55) * 0.4)
-        pts = np.stack([rx * fold * np.cos(a), np.full(n, y), cz + rz * fold * np.sin(a)], 1)
-        return pts + off
+        fold = 1 + fold_at(a, y) - 0.012 * smoothstep(0.79, 0.65, y)
+        return np.stack([rx * fold * np.cos(a), np.full(n, y), cz + rz * fold * np.sin(a)], 1)
+
+    def hem_lift(a):  # 裾はひだの山で少し下がり、谷で上がる
+        return -0.10 * fold_at(a, 0.645) + 0.002 * _noise(a, 1.3, 11)
     ys = np.linspace(0.828, 0.645, 46)
     rings = []
     for y in ys:
         r = coat_ring(y)
-        # 裾は波打たせる（たるみ）
-        if y < 0.66:
-            a = np.linspace(a0, a1, len(r))
-            r[:, 1] += 0.006 * np.sin(a * 5 + ph[2]) * (0.66 - y) / 0.015
+        if y < 0.68:
+            r[:, 1] += hem_lift(np.linspace(a0, a1, len(r))) * smoothstep(0.68, 0.645, y)
         rings.append(r)
     m.add("coat", loft(rings, closed=False, centers=[np.array([0, y, parts.torso_r(y)[2]]) for y in ys]), torso)
     # 首を包んであごの下まで立つファーの襟（前は少し開く）と、肩へ広がるファーのショール
     neck_c = np.array([0.0, 0.0, 0.004])
-    for y, r, th in [(0.834, 0.034, 0.016), (0.846, 0.031, 0.014), (0.857, 0.028, 0.012)]:
-        arc = ring(neck_c + [0, y, 0], [1, 0, 0], [0, 0, 1], r, r * 0.95, 90, np.radians(-90 + 22), np.radians(270 - 22), closed=False)
-        m.add("fur", fur(arc, th, n=16), m.skin_auto(["上半身2", "首"]))
-    for y, sc in [(0.822, 1.00), (0.810, 1.06)]:
-        rx, rz, cz = parts.torso_r(y, grow(y) * sc)
-        arc = ring([0, y + 0.004, cz], [1, 0, 0], [0, 0, 1], rx + 0.004, rz + 0.006, 120, a0 + 0.15, a1 - 0.15, closed=False)
-        m.add("fur", fur(arc, 0.013 if y > 0.815 else 0.011, n=16), m.skin_auto(["上半身2", "首"]))
+    # 立ち襟は背の高い 1 本の厚いファー（輪を積むと蛇腹に見える）。肩のショールは平たく広く寝かせる
+    up = np.array([0, 1.0, 0])
+    arc = ring(neck_c + [0, 0.845, 0], [1, 0, 0], [0, 0, 1], 0.034, 0.032, 90,
+               np.radians(-90 + 24), np.radians(270 - 24), closed=False)
+    m.add("fur", fur(arc, 0.015, rv=0.012, side=up, seed=1, n=20), m.skin_auto(["上半身2", "首"]))
+    rx, rz, cz = parts.torso_r(0.818, grow(0.818) * 1.02)
+    arc = ring([0, 0.822, cz], [1, 0, 0], [0, 0, 1], rx + 0.006, rz + 0.008, 120, a0 + 0.15, a1 - 0.15, closed=False)
+    m.add("fur", fur(arc, 0.010, rv=0.017, side=up, seed=2, n=20), m.skin_auto(["上半身2", "首"]))
     # 裾と前の縁のファー
     hem = coat_ring(0.645, 160)
-    a = np.linspace(a0, a1, 160)
-    hem[:, 1] += 0.006 * np.sin(a * 5 + ph[2]) * (0.66 - 0.645) / 0.015
-    m.add("fur", fur(hem, 0.011), torso)
+    hem[:, 1] += hem_lift(np.linspace(a0, a1, 160))
+    m.add("fur", fur(hem, 0.011, seed=3), torso)
     for k in (0, -1):
         edge = np.array([coat_ring(y, 150)[k] for y in np.linspace(0.826, 0.648, 40)])
-        m.add("fur", fur(edge, 0.010), torso)
+        m.add("fur", fur(edge, 0.010, seed=5 + k), torso)
 
     # ---- スカート：黄土色のひだが 2 段に重なって広がる。腰にファー ----
-    sk = physics.skirt(c, 0.590, 0.490, 2.10)
-    m.add("skirt", parts.skirt(0.590, 0.530, 1.70, pleats=22, depth=0.12, n=220, steps=12), sk)
-    m.add("skirt", parts.skirt(0.556, 0.492, 2.10, pleats=28, depth=0.14, n=260, steps=14), sk)
-    m.add("fur", fur(ring([0, 0.588, 0.006], [1, 0, 0], [0, 0, 1], 0.064, 0.048, 120), 0.009, closed=True),
+    # 下の段が水平の円盤に見えないよう、広がりを抑えて丈で重ねる
+    sk = physics.skirt(c, 0.590, 0.478, 1.80)
+    m.add("skirt", a_skirt(0.590, 0.522, 1.55, pleats=22, depth=0.08, seed=12), sk)
+    m.add("skirt", a_skirt(0.556, 0.478, 1.80, pleats=28, depth=0.10, seed=13, bulge=0.004), sk)
+    m.add("fur", fur(ring([0, 0.588, 0.006], [1, 0, 0], [0, 0, 1], 0.064, 0.048, 120), 0.009, closed=True, seed=6),
           m.skin_fixed("下半身"))
 
     for jp, en, s in SIDES:
         arm = c.skin_arm(jp)
         # 袖：大きくふくらみ、何段もしわが寄って、手首でファーの袖口に絞られる
-        knots = [0.044, 0.054, 0.061, 0.064, 0.062, 0.054, 0.036]
-        tt = np.linspace(0, 1, 44)
-        roll = 1 + 0.07 * np.sin(tt * np.pi * 9 + (0.6 if s > 0 else 1.7)) * np.sin(np.pi * tt) ** 0.7
-        radii = np.interp(tt, np.linspace(0, 1, len(knots)), knots) * roll
-        m.add("coat", parts.sleeve(s, -0.012, 0.250, radii, n=56,
-                                   rmod=lambda a: 1 + 0.035 * np.sin(a * 6) + 0.015 * np.sin(a * 11 + 1.0)), arm)
+        m.add("coat", puff_sleeve(s, -0.012, 0.252, seed=21 if s > 0 else 34), arm)
         cuff = [parts.arm_point(s, 0.255) + v for v in
                 ring([0, 0, 0], *_perp(parts.arm_point(s, 1.0) - parts.arm_point(s, 0.0)), 0.034, 0.034, 72)]
-        m.add("fur", fur(cuff, 0.014, closed=True, bumps=16), arm)
+        m.add("fur", fur(cuff, 0.014, closed=True, seed=7 if s > 0 else 8), arm)
         # ブーツ：ふくらはぎの下までの太いムクルク。大きなファーの縁と丸いつま先
         leg = c.skin_leg(jp)
         m.add("coat", parts.leg_tube(s, 0.128, 0.030, lambda t: 1.55 + 0.25 * t, steps=22, n=56,
                                      rmod=lambda a: 1 + 0.03 * np.sin(a * 5)), leg)
         top = parts.leg_at(0.130, s)[1]
-        m.add("fur", fur(ring(top, [1, 0, 0], [0, 0, 1], 0.050, 0.050, 90), 0.019, closed=True, bumps=16), leg)
+        m.add("fur", fur(ring(top, [1, 0, 0], [0, 0, 1], 0.050, 0.050, 90), 0.019, closed=True, seed=9 if s > 0 else 10), leg)
         m.add("coat", ellipsoid(np.array([joints(s)["足首"][0], 0.032, -0.026]), [0.040, 0.036, 0.076], nu=48, nv=28),
               m.skin_fixed(jp + "足首"))
 
