@@ -27,7 +27,7 @@ SOCK = (0.97, 0.96, 0.92)
 def build(out_dir):
     m = Model("フェリス", "Feris", "フェリス（非公式・二次創作モデル）", 150)
     c = Character(m, tex=TextureSet(out_dir), hair_color=HAIR, skin_color=(1.0, 0.87, 0.79), eye_color=(0.82, 0.12, 0.12), bust=1.18,
-                  eye=dict(rx=0.0120, ry=0.0098, top=0.88, iris=0.62, iris_in=0.10),
+                  eye=dict(rx=0.0136, ry=0.0126, top=0.88, iris=0.62, iris_in=0.10),
                   mouth=dict(rx=0.0100, ry=0.0036, smile=-0.8, fang=True))
     m.material("top", "タンクトップ", TOP, toon=0)
     m.material("skirt", "スカート", SKIRT, double=True, toon=0)
@@ -73,7 +73,7 @@ def hair(c):
     c.hair_cap("hair")
     # 原画のように髪は大きなかたまりで描き、細い束は並べない。
     # 眉の上まで下りる、毛先のとがった前髪：太い束 7 本（毛先の高さは目から決める）
-    top = c.eye["pitch"] + 0.36
+    top = c.eye["pitch"] + 0.44
     for th in np.linspace(-0.90, 0.90, 7):
         c.bang("hair", th, top - 0.14 * abs(th) + 0.03 * np.sin(th * 9), 0.0300, e_start=1.18, pointy=True,
                lift_end=1.055, sway=0.26 * th)

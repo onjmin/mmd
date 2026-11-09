@@ -21,7 +21,7 @@ def build(out_dir):
     m = Model("蓄音キリコ", "Chikune Kiriko", "蓄音キリコ（非公式・二次創作モデル）", 158)
     c = Character(m, tex=TextureSet(out_dir), hair_color=HAIR, skin_color=(0.86, 0.58, 0.36), eye_color=(0.66, 0.24, 0.12), bust=0.95,
                   mouth=dict(rx=0.0094, ry=0.0030, smile=-0.6),
-                  eye=dict(rx=0.0117, ry=0.0096, top=0.88, iris=0.60, iris_in=0.10))
+                  eye=dict(rx=0.0133, ry=0.0123, top=0.88, iris=0.60, iris_in=0.10))
     m.material("suit", "インナー", SUIT, toon=0)
     m.material("coat", "コート", COAT, double=True, toon=0)
     m.material("fur", "ファー", FUR, toon=1)
@@ -78,7 +78,7 @@ def hair(c):
     c.hair_cap("hair")
     # 原画のように髪は大きなかたまりで描き、細い束は並べない。
     # 斜めぱっつんの前髪：太い束 7 本。右目（-X 側）を隠し、左は眉の上で切れる（目の高さから決める）
-    top = c.eye["pitch"] + 0.50
+    top = c.eye["pitch"] + 0.58
     for th in np.linspace(-0.95, 0.95, 7):
         cover = np.clip((0.30 - th) / 0.85, 0, 1)
         e_end = top - 0.74 * cover

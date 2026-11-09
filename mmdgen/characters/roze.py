@@ -23,7 +23,7 @@ KH_YC, KH_RX, KH_RY = 0.746, 0.036, 0.0115
 def build(out_dir):
     m = Model("束音ロゼ", "Tabane Roze", "束音ロゼ（非公式・二次創作モデル）", 165)
     c = Character(m, tex=TextureSet(out_dir), hair_color=HAIR, skin_color=(1.0, 0.86, 0.76), eye_color=(0.12, 0.62, 0.46), bust=1.24,
-                  eye=dict(rx=0.0122, ry=0.0100, top=0.88, iris=0.62, iris_in=0.10),
+                  eye=dict(rx=0.0138, ry=0.0128, top=0.88, iris=0.62, iris_in=0.10),
                   mouth=dict(rx=0.0110, ry=0.0009, smile=1.0))
     m.material("black", "服", BLACK, toon=0)
     m.material("red", "赤", RED, toon=0)
@@ -241,7 +241,7 @@ def hair(c):
     rng = np.random.default_rng(7)
     # 原画のように髪は大きなかたまりで描き、細い束は並べない。
     # 姫カットの前髪：太い束 7 本を重ねてまっすぐな面にし、眉の高さで切りそろえる（目の高さから決める）
-    cut = c.eye["pitch"] + 0.33
+    cut = c.eye["pitch"] + 0.41
     for th in (-0.70, -0.46, -0.23, 0.0, 0.23, 0.46, 0.70):
         c.bang("hair", th, cut - 0.02 * abs(th), 0.0175, thick=0.0060, e_start=1.25, pointy=False, lift_end=1.032)
     # 姫毛：目尻より外、頬のすぐ横に左右 2 本ずつ。胸の高さで切れる
