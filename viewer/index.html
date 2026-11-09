@@ -115,10 +115,13 @@ function view(name) {
   controls.update();
 }
 
+const CACHE_BUST = Date.now();
 function load(name) {
   if (mesh) scene.remove(mesh);
   physics = null;
-  new MMDLoader().load(`../models/${name}/${name}.pmx`, async (m) => {
+  const manager = new THREE.LoadingManager();
+  manager.setURLModifier((url) => url.startsWith("data:") || url.startsWith("blob:") ? url : `${url}${url.includes("?") ? "&" : "?"}v=${CACHE_BUST}`);
+  new MMDLoader(manager).load(`../models/${name}/${name}.pmx`, async (m) => {
     mesh = m;
     // MMD 本体のテクスチャ付き材質は「テクスチャ × saturate(環境色 + 拡散色 × 光)」。
     // three.js は環境色をテクスチャの外に足す（MMDLoader は 0.2 倍で逃げる）ので、拡散色に寄せて同じ明るさにする
