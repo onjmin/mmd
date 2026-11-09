@@ -233,6 +233,10 @@ _HEAD_B_S = _HEAD_DENSE[_HEAD_ORDER, 3]
 _HEAD_NOSE_S = _HEAD_DENSE[_HEAD_ORDER, 4]
 
 
+def _mix_c(a, b, t):
+    return np.asarray(a, float) * (1 - t) + np.asarray(b, float) * t
+
+
 class Head:
     """頭（肌の面）。高さごとの断面を、前後で半径の違う楕円に鼻の出っ張りを足した形でつなぐ。
     r は髪の面を置くための大きさの目安（楕円体の半径）として残している。"""
@@ -385,7 +389,7 @@ class Character:
         self.eye_color = np.array(eye_color, float)
         self.bust = bust
         # 目・鼻・口の高さは、あご先からの高さ（頭の肌の高さ比）で決める（MMD美少女モデルの頭部の黄金比：目は下半分に大きく、瞳は目頭際に寄せて内側の白目をほぼゼロにする）
-        self.eye = dict(yaw=0.690, h=0.420, rx=0.0275, ry=0.0107, top=0.88, tilt=0.0, iris=0.56, iris_in=0.28)
+        self.eye = dict(yaw=0.690, h=0.420, rx=0.0228, ry=0.0084, top=0.88, tilt=0.0, iris=0.56, iris_in=0.28)
         self.eye.update(eye or {})
         self.eye["pitch"] = self.head.pitch_at(self.eye["h"], self.eye["yaw"])
         self.mouth = dict(rx=0.0080, ry=0.0010, smile=1.0, open_bottom=1.0, h=0.137, nose_h=0.232, fang=False)
@@ -780,7 +784,8 @@ class Character:
         m.material("eye_white", "白目", (1, 1, 1), tex=T.eye_white(ext["eye_white"], k), **noedge)
         m.material("iris", "瞳", self.eye_color, tex=T.iris("iris.png", self.eye_color, ext["iris"], k), **noedge)
         m.material("lash", "まつ毛", (0.1, 0.06, 0.07), tex=T.lash(ext["lash"], k), **noedge)
-        bc = brow_color if brow_color is not None else np.asarray(self.hair_color) * 0.65
+        # 眉は髪色そのままでなく、赤みのある焦げ茶に寄せる（既製モデルの眉の色）
+        bc = brow_color if brow_color is not None else _mix_c(np.asarray(self.hair_color) * 0.60, (0.40, 0.20, 0.20), 0.5)
         m.material("brow", "眉", bc, tex=T.brow("brow.png", bc), **noedge)
         if is_closed_mouth:
             m.material("mouth", "口", closed_mouth_color, tex=T.mouth_line("mouth_line.png", closed_mouth_color), **noedge)
@@ -847,9 +852,10 @@ class Character:
                 m.add_morph_part("まばたき", base, blink)
                 m.add_morph_part("笑い", base, h.decal(d0, remap_ab(rows, closer(0.28, **shut)), off, closed=False, plane_dir=pdir)[0])
                 m.add_morph_part("ウィンク" if s > 0 else "ウィンク右", base, blink)
-            bd = Head.dir(s * (E["yaw"] * 0.92), E["pitch"] + 0.29)
-            bpdir = Head.dir(s * E["yaw"] * 0.38, E["pitch"] + 0.24)
-            brow_rows = plane(rx * 0.88, -0.0036, 0.0036, s)
+            # 眉は目のすぐ上（目の高さの半分ほど上）、目頭側から目の真ん中あたりまで
+            bd = Head.dir(s * E["yaw"], E["pitch"] + 0.21)
+            bpdir = Head.dir(s * E["yaw"] * 0.38, E["pitch"] + 0.18)
+            brow_rows = plane(rx * 0.62, -0.0040, 0.0040, s, cx=-s * 0.30 * rx)
             b_base = m.add("brow", h.decal(bd, brow_rows, 0.0085, closed=False, plane_dir=bpdir), m.skin_fixed("頭"))
             # 眉の表情モーフ（にこり・怒り・困る・まばたき・笑い）
             m.add_morph_part("笑い", b_base, h.decal(bd, remap_ab(brow_rows, lambda r: r + [0, -0.0025]), 0.0085, closed=False, plane_dir=bpdir)[0])
@@ -857,12 +863,13 @@ class Character:
             m.add_morph_part("怒り", b_base, h.decal(bd, remap_ab(brow_rows, lambda r, s=s: np.stack([r[:, 0], r[:, 1] + 0.22 * r[:, 0] * s - 0.002], 1)), 0.0085, closed=False, plane_dir=bpdir)[0])
             m.add_morph_part("困る", b_base, h.decal(bd, remap_ab(brow_rows, lambda r, s=s: np.stack([r[:, 0], r[:, 1] - 0.22 * r[:, 0] * s + 0.002], 1)), 0.0085, closed=False, plane_dir=bpdir)[0])
             if blush:
-                # 目のすぐ下・頬の高い位置（h=0.275）にふんわり配置する
-                cd = Head.dir(s * 0.44, self.head.pitch_at(0.275, 0.44))
-                cpdir = Head.dir(s * 0.25, self.head.pitch_at(0.275, 0.25))
-                m.add("blush", h.decal(cd, plane(0.0135, -0.0055, 0.0055, s), 0.0020, closed=False, plane_dir=cpdir), m.skin_fixed("頭"))
+                # 目の下の縁から口の高さまで、頬に広くふんわり置く
+                bh = E["h"] - 0.12
+                cd = Head.dir(s * 0.52, self.head.pitch_at(bh, 0.52))
+                cpdir = Head.dir(s * 0.30, self.head.pitch_at(bh, 0.30))
+                m.add("blush", h.decal(cd, plane(0.0210, -0.0095, 0.0095, s), 0.0020, closed=False, plane_dir=cpdir), m.skin_fixed("頭"))
 
-        # 鼻：繊細な縦の影線と鼻先の下の淡い影
+        # 鼻：鼻先の淡いピンクの点
         nd = Head.dir(0.006, M["nose_pitch"])
         m.add("nose", h.decal(nd, plane(0.0028, -0.0034, 0.0034, 1.0, cols=5, rows=5), 0.0032, closed=False), m.skin_fixed("頭"))
 
@@ -870,7 +877,7 @@ class Character:
         md = Head.dir(0.0, M["pitch"])
         if is_closed_mouth:
             # 普段は閉じた微笑みリップライン。口内メッシュは極小にして裏に隠し、あいうえおモーフで開く
-            lip_base_ab = plane(M["rx"], -0.0026, 0.0026, 1.0, cols=19, rows=5)
+            lip_base_ab = plane(M["rx"], -0.0048, 0.0048, 1.0, cols=19, rows=7)
             in_base_ab = mouth_grid_ab(M["rx"] * 0.65, 0.0002, M["smile"] * 0.2, top=0.45, bottom=0.55)
             base_lip = m.add("mouth", h.decal(md, lip_base_ab, 0.0075, closed=False), m.skin_fixed("頭"))
             base_in = m.add("mouth_in", h.decal(md, in_base_ab, 0.0010, closed=False), m.skin_fixed("頭"))

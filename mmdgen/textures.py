@@ -247,76 +247,64 @@ class TextureSet:
         return self.save(img.resize((n // S, n // S), Image.LANCZOS), name)
 
     def brow(self, name, color):
-        """目頭側から目尻へなだらかに弧を描いて細く抜ける繊細な眉。"""
+        """眉：目のすぐ上、目頭側から目の真ん中あたりまでの短い弧。目頭側が太く、外へ細って抜ける（細い線にはしない）。
+        u = 0 が目頭側。"""
         w, h = 256 * S, 64 * S
         img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
         d = ImageDraw.Draw(img)
-        ts = np.linspace(0.0, 1.0, 50)
+        ts = np.linspace(0.0, 1.0, 60)
         pts_top, pts_bot = [], []
         for t in ts:
-            u = 0.06 + 0.88 * t
-            y_c = 0.56 - 0.22 * np.sin(np.pi * (t ** 0.85))
-            thick = 0.09 * (np.sin(np.pi * t) ** 0.75) * (1.0 - 0.35 * t)
-            pts_top.append((u * w, (y_c - thick) * h))
-            pts_bot.append((u * w, (y_c + thick) * h))
-        d.polygon(pts_top + pts_bot[::-1], fill=_rgb(color, 210))
+            u = 0.05 + 0.90 * t
+            y_c = 0.58 - 0.16 * np.sin(np.pi * 0.85 * t)
+            thick = 0.24 * (1 - t) ** 0.8 * np.clip(t / 0.06, 0, 1) ** 0.5 + 0.02 * np.sin(np.pi * t)
+            pts_top.append((u * w, (y_c - thick * 0.55) * h))
+            pts_bot.append((u * w, (y_c + thick * 0.45) * h))
+        d.polygon(pts_top + pts_bot[::-1], fill=_rgb(color, 235))
         return self.save(img.resize((256, 64), Image.LANCZOS), name)
 
     def nose(self, name="nose.png", skin_color=(1.0, 0.86, 0.76)):
-        """既製MMDモデル準拠の控えめで可愛らしい鼻先ハイライト＆淡い立体影点。"""
+        """鼻：既製MMDモデルのように、鼻先に淡いピンクの丸い点をぼかして置くだけ。"""
         n = 128 * S
         img = Image.new("RGBA", (n, n), (0, 0, 0, 0))
         d = ImageDraw.Draw(img)
         sc = np.asarray(skin_color, float)
-        # 鼻先の下のほんのり淡いピーチ影
-        shade_col = _rgb(sc * np.array([0.85, 0.70, 0.66]), 60)
-        d.ellipse([n * 0.38, n * 0.54, n * 0.62, n * 0.80], fill=shade_col)
-        img = img.filter(ImageFilter.GaussianBlur(n * 0.05))
-        d = ImageDraw.Draw(img)
-        # 鼻先の小さなチョン点（濃すぎない柔らかい暖色ブラウン）
-        line_col = _rgb(sc * np.array([0.52, 0.34, 0.30]), 165)
-        stroke = [
-            (n * 0.48, n * 0.47),
-            (n * 0.52, n * 0.50),
-            (n * 0.52, n * 0.66),
-            (n * 0.49, n * 0.73),
-            (n * 0.47, n * 0.64),
-        ]
-        d.polygon(stroke, fill=line_col)
+        d.ellipse([n * 0.30, n * 0.42, n * 0.70, n * 0.78], fill=_rgb(sc * np.array([0.98, 0.70, 0.70]), 150))
+        img = img.filter(ImageFilter.GaussianBlur(n * 0.045))
         return self.save(img.resize((128, 128), Image.LANCZOS), name)
 
     def blush(self, name="blush.png", color=(1.0, 0.46, 0.50)):
         """ふんわりぼかしたピーチピンクのチーク。"""
         w, h = 256, 128
         y, x = np.mgrid[0:h, 0:w] / np.array([h - 1, w - 1])[:, None, None] * 2 - 1
-        r2 = x * x + (y * 1.15) ** 2
-        a = np.clip(1.0 - r2, 0.0, 1.0) ** 2.2 * 0.24
+        r2 = x * x + (y * 1.10) ** 2
+        a = np.clip(1.0 - r2, 0.0, 1.0) ** 1.6 * 0.34
         col = np.broadcast_to(np.asarray(color, float), (h, w, 3)).copy()
         arr = np.dstack([np.clip(col, 0, 1), np.clip(a, 0, 1)])
         return self.save(Image.fromarray((arr * 255).astype(np.uint8), "RGBA"), name)
 
     def mouth_line(self, name="mouth_line.png", color=(0.48, 0.22, 0.22)):
-        """既製MMDモデル準拠の優しく微笑む可愛らしいリップライン（口角がほんのり上がり、唇に淡い血色ティントが乗る）。"""
+        """閉じ気味の笑顔の口：口角の上がった三日月形。上唇の線が太く濃く、中が少しだけ開いて赤い口内が見え、下は細い線。"""
         w, h = 256 * S, 128 * S
         img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-        lip_tint = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-        dt = ImageDraw.Draw(lip_tint)
-        dt.ellipse([w * 0.30, h * 0.48, w * 0.70, h * 0.72], fill=_rgb((0.96, 0.64, 0.62), 55))
-        lip_tint = lip_tint.filter(ImageFilter.GaussianBlur(h * 0.05))
-        img = Image.alpha_composite(img, lip_tint)
         d = ImageDraw.Draw(img)
-
-        pts_top, pts_bot = [], []
-        for t in np.linspace(0, 1, 60):
-            u = 0.06 + 0.88 * t
+        c = np.asarray(color, float)
+        top, bot, up_o, up_i = [], [], [], []
+        for t in np.linspace(0, 1, 80):
+            u = 0.04 + 0.92 * t
             x = (t - 0.5) * 2.0
-            # 口角がキュッと優しく上がる美少女の微笑みアーチ
-            y = 0.55 - 0.11 * (x ** 2) + 0.02 * np.cos(np.pi * x)
-            env = np.sin(np.pi * t) ** 0.55
-            th = (0.058 + 0.016 * np.exp(-((x / 0.35) ** 2))) * env
-            pts_top.append((u * w, (y - th * 0.48) * h))
-            pts_bot.append((u * w, (y + th * 0.52) * h))
-        d.polygon(pts_top + pts_bot[::-1], fill=_rgb(color, 210))
+            y = 0.50 - 0.17 * x ** 2  # 口角が上がる
+            env = np.sin(np.pi * t) ** 0.5
+            gap = 0.20 * (1 - x * x) ** 1.2
+            top.append((u * w, y * h))
+            bot.append((u * w, (y + gap) * h))
+            up_o.append((u * w, (y - 0.050 * env) * h))
+            up_i.append((u * w, (y + 0.030 * env) * h))
+        d.polygon(top + bot[::-1], fill=_rgb(_mix(c, (0.80, 0.30, 0.32), 0.55), 235))   # 口の中
+        d.polygon(up_o + up_i[::-1], fill=_rgb(c * 0.75, 245))                          # 上唇の線
+        lo = [(px, py) for px, py in bot]
+        for (x0, y0), (x1, y1), t in zip(lo[:-1], lo[1:], np.linspace(0, 1, len(lo) - 1)):
+            d.line([(x0, y0), (x1, y1)], fill=_rgb(c, int(170 * np.sin(np.pi * t) ** 0.6)), width=max(1, int(h * 0.018)))
         return self.save(img.resize((256, 128), Image.LANCZOS), name)
 
     def mouth_interior(self, name="mouth_in.png", fang=False):
