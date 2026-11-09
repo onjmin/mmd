@@ -112,7 +112,7 @@ def build(out_dir):
         sleeve, cuff = balloon_sleeve(s)
         m.add("sleeve", sleeve, arm)
         m.add("red", cuff, arm)
-        m.add("red", parts.arm_torus(s, 0.085, 0.0185, 0.0035), arm)
+        m.add("red", parts.arm_torus(s, 0.085, 0.0205, 0.0035), arm)
         # 腰布：腰の横から垂れて脚の外〜後ろを覆い（前は開く）、裾が炎になる。
         # 長い布なので脚には付けず、腰から下げた物理の布にする（走ると後ろへなびき、上げた脚に押されてめくれる）
         mid = 0.50 if s > 0 else np.pi - 0.50  # 0 が外側、π/2 が後ろ
