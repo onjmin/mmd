@@ -250,6 +250,7 @@ _HS_RTOP = np.array([_HS_R[_HS_OK[:, j], j][-1] for j in range(len(_HS_PHI))])  
 # 既製モデル（ずんだもん等）の頬は丸くふくらんでつながっているので、高さごとの輪切りを凸に包んだ形を作っておき、
 # くぼみをその形へ CHEEK_FILL の割合だけ持ち上げる（鼻先・口元・頬の外へ出ている所は動かさない）。
 CHEEK_FILL = 0.6
+JAW_WIDEN = 0.32
 
 
 def _row_hull(rho, phi):
@@ -312,10 +313,12 @@ def _hs_lookup(v, aphi, v_crown):
     hull = g(_HS_HULL0) / np.maximum(wsum, 1e-9)
     k = CHEEK_FILL * smoothstep(-0.20, -0.40, v) * smoothstep(-1.0, -0.85, v)
     r = np.where(above, r, r + np.maximum(hull - r, 0.0) * k)
+    # 目の下からあごへの横幅を広げ、頬から V 字にとがるあごを丸いあごにする（既製モデルは頬が目の下でふくらみ、口の高さでも目の高さの幅の 3/4 ほどある）
+    r = r * (1 + JAW_WIDEN * smoothstep(0.10, -0.85, v) * smoothstep(-1.0, -0.90, v) * np.sin(aphi) ** 2)
     wt = np.where(above, 1.0, smoothstep(0.2, 0.5, wsum))
     wt = np.where((v >= -1.0) & (aphi <= _HS_PHI[-1] + 1e-9), wt, 0.0)
     # あごの下は表で測れないので、あご先の少し上から元の細っていく断面へ切り替える（あごの下が平らに切れないように）
-    wt = wt * smoothstep(-1.0, -0.80, v)
+    wt = wt * smoothstep(-1.0, -0.90, v)
     return r, wt
 
 
@@ -367,7 +370,7 @@ class Head:
         # あご先の横（正面から 20 度）から上げはじめ、耳の下で目の線〜あご先の 3 割ほど上がる。
         # 上げる幅はあごの下だけ（h < 0.18）にして、頬の輪郭は表のまま残す
         jaw_back = smoothstep(0.94, 0.30, np.cos(phi))
-        jaw_lift = 0.13 * (1.0 - smoothstep(0.0, 0.21, h_c)) * jaw_back
+        jaw_lift = 0.09 * (1.0 - smoothstep(0.0, 0.26, h_c)) * jaw_back
         y = self.y0 + (h_c + jaw_lift) * self.H
         return np.stack([rho * np.sin(phi), y, self.zc - rho * np.cos(phi)], -1)
 

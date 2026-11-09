@@ -139,8 +139,8 @@ class TextureSet:
         bot = np.where(inside.any(0), n - 1 - inside[::-1].argmax(0), 0)[None, :]
         px = (n - 1) / (ext[3] - ext[2])  # ry 1 つぶんの画素数
         depth, near_bot = (rows - top) / px, (bot - rows) / px
-        shade = np.clip(1 - depth / 1.10, 0, 1) ** 1.2
-        col = np.array([0.95, 0.95, 0.98]) * (1 - shade[..., None]) + np.array([0.70, 0.72, 0.84]) * shade[..., None]
+        shade = np.clip(1 - depth / 0.80, 0, 1) ** 1.4
+        col = np.array([0.97, 0.97, 0.99]) * (1 - shade[..., None]) + np.array([0.78, 0.78, 0.88]) * shade[..., None]
         edge = np.clip(1 - near_bot / 0.14, 0, 1) ** 2 * 0.35
         col = col * (1 - edge[..., None]) + np.array([0.70, 0.66, 0.70]) * edge[..., None]
         img = Image.fromarray((np.dstack([np.clip(col, 0, 1), m]) * 255).astype(np.uint8), "RGBA")
@@ -163,7 +163,8 @@ class TextureSet:
         bright_col = np.clip(color * 1.25 + 0.38, 0.0, 1.0)
         rim_col = np.clip(color * 0.22 + np.array([0.02, 0.03, 0.10]), 0.0, 1.0)
 
-        t_upper = np.clip((y - 0.32) / 0.26, 0.0, 1.0)
+        # 上半分はまぶたの影で濃く（既製モデルの瞳は上 4〜5 割が暗く、下へ明るく抜ける）
+        t_upper = np.clip((y - 0.38) / 0.32, 0.0, 1.0)
         t_upper = t_upper * t_upper * (3 - 2 * t_upper)
         col = top_shade * (1 - t_upper[..., None]) + mid_col * t_upper[..., None]
         # 下半分の三日月形の明るみ
@@ -190,7 +191,7 @@ class TextureSet:
         img = Image.fromarray((np.clip(col, 0, 1) * 255).astype(np.uint8), "RGB")
         d = ImageDraw.Draw(img)
         # 光：板の上部はまつ毛に隠れるので、見える高さに置く
-        d.ellipse([n * 0.12, n * 0.33, n * 0.42, n * 0.45], fill=(255, 255, 255))  # まつ毛の際の横長の光
+        d.ellipse([n * 0.20, n * 0.22, n * 0.44, n * 0.50], fill=(255, 255, 255))  # 大きな縦長の光
         d.ellipse([n * 0.60, n * 0.66, n * 0.74, n * 0.78], fill=(250, 250, 250))
         d.ellipse([n * 0.66, n * 0.35, n * 0.74, n * 0.41], fill=(235, 235, 235))
         img.putalpha(Image.fromarray((alpha * 255).astype(np.uint8)))
