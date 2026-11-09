@@ -115,8 +115,15 @@ async function open(k) {
   status("読み込み中…");
   const bust = Date.now();
   try {
-    meta = await (await fetch(`../models/${k}/face.json?v=${bust}`)).json();
-  } catch (e) { status("models/" + k + "/face.json を読めませんでした（python build.py で作り直してください）"); return; }
+    const r = await fetch(`../models/${k}/face.json?v=${bust}`);
+    if (!r.ok) throw new Error(r.status);
+    meta = await r.json();
+  } catch (e) {
+    status(e instanceof TypeError
+      ? "ページを配っているサーバーにつながりません。サーバー（python serve.py など）が止まっていないか確かめて、ページを開き直してください。"
+      : `models/${k}/face.json を読めませんでした（python build.py で作り直してください）`);
+    return;
+  }
   built = { ...meta.values, eye_color: meta.eye_color };
   values = { ...built };
   apply.irisKey = apply.white = undefined;
