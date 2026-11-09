@@ -20,8 +20,8 @@ BOW = (0.38, 0.15, 0.11)
 def build(out_dir):
     m = Model("蓄音キリコ", "Chikune Kiriko", "蓄音キリコ（非公式・二次創作モデル）", 158)
     c = Character(m, tex=TextureSet(out_dir), hair_color=HAIR, skin_color=(0.86, 0.58, 0.36), eye_color=(0.66, 0.24, 0.12), bust=0.95,
-                  mouth=dict(rx=0.0094, ry=0.0030, smile=-0.6, h=0.137, nose_h=0.232),
-                  eye=dict(yaw=0.690, h=0.420, rx=0.0222, ry=0.0082, top=0.88, iris=0.54, iris_in=0.28))
+                  mouth=dict(rx=0.0094, ry=0.0030, smile=-0.6),
+                  eye=dict(rx=0.0167, ry=0.0062, top=0.88, iris=0.54, iris_in=0.28))
     m.material("suit", "インナー", SUIT, toon=0)
     m.material("coat", "コート", COAT, double=True, toon=0)
     m.material("fur", "ファー", FUR, toon=1)

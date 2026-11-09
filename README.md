@@ -38,6 +38,9 @@ python serve.py
 - `viewer/?m=feris&motion=run&at=0.4` のように開くと、その動きの 0.4 秒目で止まる（見比べや記録用）
 
 ブラウザなしで正面の顔を PNG にするなら `python -m mmdgen.render feris out.png bare`（`bare` は髪と服を消して輪郭と目を見る、`face` は髪あり）。
+関数 `render()` は `yaw`（斜め・横から）と `clay=True`（色を消して凹凸だけ）も使える。
+
+顔の前半分の形は、美少女モデル（`models/tabane_roze_n4d/`）を `python -m mmdgen.head_scan` で輪切りにした表 `mmdgen/head_shape.py` から作る。
 
 ## 利用規約について
 

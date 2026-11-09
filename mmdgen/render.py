@@ -16,29 +16,40 @@ ROOT = Path(__file__).resolve().parent.parent
 BARE = {"肌", "白目", "瞳", "まつ毛", "眉", "口", "口内", "鼻", "頬"}
 
 
-def render(path, view="face", size=800):
+def render(path, view="face", size=800, yaw=0.0, clay=False, keep=None, frame=None):
+    """yaw は体を上から見て左回りに回す角（度、正面 0・横顔 90）。clay は色を消して陰影だけで凹凸を見る。
+    keep は描く材質名の集合（bare は BARE）。frame=(cx, cy, half) で描く範囲を直接決める。"""
     info = read(path)
-    P, N, UV = info["positions"], info["normals"], info["uvs"]
+    P, N, UV = info["positions"].copy(), info["normals"].copy(), info["uvs"]
     H = P[:, 1].max()
     if view in ("face", "bare"):
         cy, half = H * 0.865, H * 0.085
     else:
         cy, half = H * 0.5, H * 0.52
+    cx = 0.0
+    if frame is not None:
+        cx, cy, half = frame
+    if yaw:
+        a = np.radians(yaw)
+        R = np.array([[np.cos(a), 0, np.sin(a)], [0, 1, 0], [-np.sin(a), 0, np.cos(a)]])
+        pivot = np.array([0.0, cy, 0.0])
+        P = (P - pivot) @ R.T + pivot
+        N = N @ R.T
     W = Hh = size
-    sx = lambda x: (x / half * 0.5 + 0.5) * (W - 1)
+    sx = lambda x: ((x - cx) / half * 0.5 + 0.5) * (W - 1)
     sy = lambda y: (0.5 - (y - cy) / half * 0.5) * (Hh - 1)
     X, Y = sx(P[:, 0]), sy(P[:, 1])
     Z = P[:, 2]  # 小さいほど手前（顔は -Z 向き）
     img = np.zeros((Hh, W, 3)) + np.array([0.86, 0.88, 0.92])
     zbuf = np.full((Hh, W), np.inf)
-    light = np.array([0.0, 0.45, -1.0])
+    light = np.array([-0.55, 0.45, -0.75]) if clay else np.array([0.0, 0.45, -1.0])  # 粘土は斜め上から当てて凹凸を出す
     light /= np.linalg.norm(light)
     base = Path(path).parent
     start = 0
     for m in info["materials"]:
         idx = info["indices"][start:start + m["faces"] * 3].reshape(-1, 3)
         start += m["faces"] * 3
-        if view == "bare" and m["name"] not in BARE:
+        if (view == "bare" and keep is None and m["name"] not in BARE) or (keep is not None and m["name"] not in keep):
             continue
         tex = None
         if m["tex"]:
@@ -46,11 +57,14 @@ def render(path, view="face", size=800):
             if tp.exists():
                 tex = np.asarray(Image.open(tp).convert("RGBA"), float) / 255
         dif = np.asarray(m["diffuse"][:3])
+        if clay:
+            tex, dif = None, np.array([0.85, 0.82, 0.80])
         alpha_m = m["diffuse"][3]
         if alpha_m <= 0:
             continue
         flat = "白目" in m["name"] or "瞳" in m["name"] or "まつ" in m["name"] or "眉" in m["name"] or "口" in m["name"] \
             or "鼻" in m["name"] or "頬" in m["name"]
+        flat = flat and not clay
         for f in idx:
             xs, ys = X[f], Y[f]
             x0, x1 = int(max(0, np.floor(xs.min()))), int(min(W - 1, np.ceil(xs.max())))
@@ -86,7 +100,10 @@ def render(path, view="face", size=800):
                 n = l0[..., None] * N[f[0]] + l1[..., None] * N[f[1]] + l2[..., None] * N[f[2]]
                 n /= np.linalg.norm(n, axis=-1, keepdims=True) + 1e-9
                 sh = np.clip(n @ light, 0, 1)
-                col = col * (0.72 + 0.28 * np.clip((sh - 0.15) / 0.2, 0, 1))[..., None]
+                if clay:
+                    col = col * (0.25 + 0.75 * sh)[..., None]
+                else:
+                    col = col * (0.72 + 0.28 * np.clip((sh - 0.15) / 0.2, 0, 1))[..., None]
             ok &= a > 0.02
             sub = img[y0:y1 + 1, x0:x1 + 1]
             sub[ok] = sub[ok] * (1 - a[ok, None]) + col[ok] * a[ok, None]
