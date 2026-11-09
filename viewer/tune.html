@@ -7,8 +7,8 @@
 <style>
   :root { --bg: #e9e6ef; --panel: #fff; --ink: #222; --sub: #666; --line: #d8d4e0; --accent: #5b4bb7; }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--ink); font: 13px system-ui, sans-serif; display: flex; height: 100vh; }
-  #panel { width: 330px; flex: none; background: var(--panel); border-right: 1px solid var(--line); overflow-y: auto; padding: 12px 14px; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 13px system-ui, sans-serif; display: flex; height: 100vh; overflow: hidden; }
+  #panel { width: 330px; flex: none; background: var(--panel); border-right: 1px solid var(--line); overflow-y: auto; padding: 12px 14px 0; }
   h1 { font-size: 15px; margin: 0 0 8px; }
   .chars button { margin: 0 4px 6px 0; padding: 4px 10px; border: 1px solid var(--line); background: #f6f5f9; border-radius: 6px; cursor: pointer; }
   .chars button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
@@ -20,18 +20,21 @@
   .row input[type=range] { width: 100%; margin: 4px 0 0; }
   .row.changed .name::after { content: " ●"; color: var(--accent); font-size: 10px; }
   .row button.reset { border: none; background: none; color: var(--sub); cursor: pointer; font-size: 11px; padding: 0 0 0 6px; }
-  .actions { position: sticky; bottom: -12px; background: var(--panel); padding: 10px 0 12px; border-top: 1px solid var(--line); display: flex; gap: 6px; flex-wrap: wrap; }
+  .actions { position: sticky; bottom: 0; background: var(--panel); padding: 10px 0 12px; border-top: 1px solid var(--line); display: flex; gap: 6px; flex-wrap: wrap; }
   .actions button { padding: 6px 10px; border-radius: 6px; border: 1px solid var(--line); background: #f6f5f9; cursor: pointer; }
   .actions button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
-  #status { font-size: 12px; color: var(--sub); min-height: 1.4em; margin-top: 4px; width: 100%; }
-  #views { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; min-width: 0; }
-  #views figure { margin: 0; position: relative; background: var(--bg); min-height: 0; }
-  #views iframe { width: 100%; height: 100%; border: 0; display: block; }
-  #views figcaption { position: absolute; left: 8px; top: 6px; font-size: 12px; color: var(--sub); background: #fffc; padding: 1px 6px; border-radius: 4px; }
-  #busy { position: fixed; right: 12px; top: 10px; background: var(--accent); color: #fff; padding: 4px 10px; border-radius: 12px; display: none; }
-  body.busy #busy { display: block; }
-  @media (max-width: 760px) { body { flex-direction: column; height: auto; } #panel { width: 100%; } #views { height: 70vh; } }
+  #status { font-size: 12px; color: var(--sub); min-height: 1.4em; width: 100%; white-space: pre-wrap; }
+  #stage { flex: 1; position: relative; min-width: 0; }
+  #stage canvas { display: block; }
+  .cap { position: absolute; top: 6px; font-size: 12px; color: var(--sub); background: #fffc; padding: 1px 6px; border-radius: 4px; }
+  @media (max-width: 760px) { body { flex-direction: column; height: auto; overflow: auto; } #panel { width: 100%; } #stage { height: 70vh; } }
 </style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.150.1/examples/jsm/"
+} }
+</script>
 </head>
 <body>
 <div id="panel">
@@ -40,120 +43,367 @@
   <div id="rows"></div>
   <div class="actions">
     <button class="primary" id="save">保存</button>
-    <button id="revert">保存した値に戻す</button>
+    <button id="revert">元に戻す</button>
     <button id="defaults">全部初期値に</button>
     <div id="status">読み込み中…</div>
   </div>
 </div>
-<div id="views">
-  <figure><iframe id="v0"></iframe><figcaption>正面</figcaption></figure>
-  <figure><iframe id="v1"></iframe><figcaption>斜め 35°</figcaption></figure>
-</div>
-<div id="busy">作り直し中…</div>
-<script>
+<div id="stage"><span class="cap" style="left:8px">正面</span><span class="cap" id="cap2">斜め 35°</span></div>
+<script type="module">
+// スライダーを動かすと、読み込んだモデルの頂点と目のテクスチャをブラウザの中でその場で変える（作り直しを待たない）。
+// 動かし方は作るとき（mmdgen/body.py・textures.py）と同じ考え方で、寸法は作るときに書き出す models/<キー>/face.json から取る。
+// 「保存」は python serve.py が動いていればそこへ保存して正確に作り直す。動いていなければ json をダウンロードする。
+import * as THREE from "three";
+import { MMDLoader } from "three/addons/loaders/MMDLoader.js";
+import { OutlineEffect } from "three/addons/effects/OutlineEffect.js";
+
 const NAMES = { tabane_roze: "ロゼ", chikune_kiriko: "キリコ", feris: "フェリス" };
 let key = new URLSearchParams(location.search).get("m") || "tabane_roze";
-let spec = [], values = {}, saved = {}, effective = {};
-let timer = null, building = false, again = false, colorTouched = false;
-// 瞳の色は触ったとき（か保存してあるとき）だけ送る。触らずに送ると色の丸めでモデルがわずかに変わる
-function payload() { const v = { ...values }; if (!colorTouched && saved.eye_color === undefined) delete v.eye_color; return v; }
+let meta = null, mesh = null, base = null, values = {}, built = {};
 const status = (t) => { document.getElementById("status").textContent = t; };
 
-function showViews() {
-  const base = `index.html?m=${key}&cam=face&ui=0&outline=1&hide=${encodeURIComponent("ヘッドセット")}`;
-  document.getElementById("v0").src = `${base}&yaw=0&t=${Date.now()}`;
-  document.getElementById("v1").src = `${base}&yaw=35&t=${Date.now()}`;
+// ---- 表示：1 つのキャンバスに正面と斜めを左右に並べて描く ----
+const stage = document.getElementById("stage");
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(devicePixelRatio);
+renderer.setScissorTest(true);
+stage.appendChild(renderer.domElement);
+const effect = new OutlineEffect(renderer);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xe9e6ef);
+scene.add(new THREE.AmbientLight(0x000000));
+const LIGHT = 0x99 / 255;
+const light = new THREE.DirectionalLight(0x999999);
+light.position.set(-0.5, 1, 1);
+scene.add(light);
+const cams = [new THREE.PerspectiveCamera(30, 1, 0.1, 500), new THREE.PerspectiveCamera(30, 1, 0.1, 500)];
+const YAWS = [0, 35];
+
+function placeCams() {
+  if (!meta) return;
+  const w = stage.clientWidth / 2, h = stage.clientHeight;
+  const H = meta.head.H, cy = meta.head.y0 + H * 0.42;  // 頭だけを枠いっぱいに
+  const t = Math.tan(15 * Math.PI / 180);
+  cams.forEach((c, i) => {
+    c.aspect = w / h; c.updateProjectionMatrix();
+    const d = Math.max(H * 1.0 / 2 / t, H * 0.95 / 2 / (t * c.aspect));
+    const a = YAWS[i] * Math.PI / 180;
+    c.position.set(Math.sin(a) * d, cy, Math.cos(a) * d);
+    c.lookAt(0, cy, 0);
+  });
 }
-
-function fmt(v, step) { const d = Math.max(0, -Math.floor(Math.log10(step))); return (+v).toFixed(d); }
-
-function renderRows() {
-  const box = document.getElementById("rows");
-  box.innerHTML = "";
-  const color = document.createElement("div");
-  color.className = "row";
-  color.innerHTML = `<div class="top"><span class="name">瞳の色</span><span class="val"></span></div>
-    <input type="color" style="width:100%;height:28px;margin-top:4px">`;
-  const ci = color.querySelector("input");
-  ci.value = values.eye_color || "#336699";
-  ci.onchange = () => { values.eye_color = ci.value; colorTouched = true; mark(); schedule(); };
-  box.appendChild(color);
-  for (const s of spec) {
-    const r = document.createElement("div");
-    r.className = "row";
-    r.dataset.name = s.name;
-    r.innerHTML = `<div class="top"><span class="name">${s.label}</span>
-      <span><span class="val"></span><button class="reset" title="初期値に戻す">↺</button></span></div>
-      <input type="range" min="${s.min}" max="${s.max}" step="${s.step}">
-      <div class="help">${s.help}</div>`;
-    const inp = r.querySelector("input"), val = r.querySelector(".val");
-    inp.value = values[s.name];
-    val.textContent = fmt(values[s.name], s.step);
-    inp.oninput = () => { values[s.name] = +inp.value; val.textContent = fmt(inp.value, s.step); mark(); };
-    inp.onchange = schedule;  // つまみを離したら作り直す
-    r.querySelector(".reset").onclick = () => { values[s.name] = s.default; inp.value = s.default; val.textContent = fmt(s.default, s.step); mark(); schedule(); };
-    box.appendChild(r);
-  }
-  mark();
+function resize() {
+  renderer.setSize(stage.clientWidth, stage.clientHeight);
+  document.getElementById("cap2").style.left = (stage.clientWidth / 2 + 8) + "px";
+  placeCams();
 }
+addEventListener("resize", resize);
+renderer.setAnimationLoop(() => {
+  const w = stage.clientWidth / 2, h = stage.clientHeight;
+  cams.forEach((c, i) => {
+    renderer.setViewport(i * w, 0, w, h);
+    renderer.setScissor(i * w, 0, w, h);
+    effect.render(scene, c);
+  });
+});
 
-function mark() {
-  for (const s of spec) {
-    const r = document.querySelector(`.row[data-name="${s.name}"]`);
-    if (r) r.classList.toggle("changed", Math.abs(values[s.name] - s.default) > 1e-9);
-  }
-  const base = { ...defaultsAll(), ...saved };
-  if (saved.eye_color === undefined) base.eye_color = effective.eye_color;
-  const dirty = JSON.stringify(pick(values)) !== JSON.stringify(pick(base));
-  document.getElementById("save").textContent = dirty ? "保存（未保存の変更あり）" : "保存";
-}
-function defaultsAll() { const d = { eye_color: effective.eye_color }; spec.forEach((s) => d[s.name] = s.default); return d; }
-function pick(v) { const o = {}; spec.forEach((s) => o[s.name] = +v[s.name]); o.eye_color = v.eye_color; return o; }
-
-function schedule() { clearTimeout(timer); timer = setTimeout(build, 150); }
-async function build() {
-  if (building) { again = true; return; }
-  building = true; document.body.classList.add("busy"); status("作り直し中…");
-  try {
-    const r = await fetch("/api/face/build", { method: "POST", body: JSON.stringify({ m: key, values: payload() }) });
-    const j = await r.json();
-    if (!r.ok) throw new Error(j.error);
-    status(`作り直しました（${j.seconds.toFixed(1)} 秒）`);
-    showViews();
-  } catch (e) { status("失敗：" + e.message); console.error(e); }
-  building = false; document.body.classList.remove("busy");
-  if (again) { again = false; build(); }
-}
-
+// ---- 読み込み ----
 async function open(k) {
   key = k;
   history.replaceState(null, "", `?m=${k}`);
   document.querySelectorAll(".chars button").forEach((b) => b.classList.toggle("on", b.dataset.k === k));
-  document.body.classList.add("busy"); status("読み込み中…");
-  const r = await fetch(`/api/face?m=${k}`);
-  const j = await r.json();
-  document.body.classList.remove("busy");
-  if (!r.ok) { status("失敗：" + j.error); return; }
-  spec = j.spec; saved = j.saved; values = j.values; colorTouched = false;
-  effective = { eye_color: j.original_eye_color };  // キャラの元の色
+  status("読み込み中…");
+  const bust = Date.now();
+  try {
+    meta = await (await fetch(`../models/${k}/face.json?v=${bust}`)).json();
+  } catch (e) { status("models/" + k + "/face.json を読めませんでした（python build.py で作り直してください）"); return; }
+  built = { ...meta.values, eye_color: meta.eye_color };
+  values = { ...built };
+  apply.irisKey = apply.white = undefined;
   renderRows();
-  status(Object.keys(saved).length ? "保存した値で表示しています" : "まだ保存した値はありません（キャラの元の形）");
-  showViews();
+  if (mesh) { scene.remove(mesh); mesh = null; }
+  return new Promise((done) => {
+    const manager = new THREE.LoadingManager();
+    manager.setURLModifier((u) => u.startsWith("data:") || u.startsWith("blob:") ? u : `${u}${u.includes("?") ? "&" : "?"}v=${bust}`);
+    new MMDLoader(manager).load(`../models/${k}/${k}.pmx`, (m) => {
+      mesh = m;
+      m.material.forEach((mt) => {  // ビューアと同じ明るさの合わせ方
+        if (mt.name === "ヘッドセット") mt.visible = false;  // 顔にかかる小物は隠す
+        const p = mt.userData.outlineParameters; if (p) { p.thickness = 0.0022; p.color = [0, 0, 0]; }
+        if (!mt.map) return;
+        const amb = mt.emissive.clone().multiplyScalar(5);
+        const c = mt.color.clone().multiplyScalar(LIGHT).add(amb);
+        mt.color.setRGB(Math.min(1, c.r), Math.min(1, c.g), Math.min(1, c.b)).multiplyScalar(1 / LIGHT);
+        mt.emissive.setRGB(0, 0, 0);
+      });
+      const bone = (n) => m.skeleton.bones.find((b) => b.name === n);
+      bone("左腕")?.rotation.set(0, 0, -0.62);
+      bone("右腕")?.rotation.set(0, 0, 0.62);
+      prepare(m);
+      scene.add(m);
+      resize();
+      apply();
+      status("スライダーを動かすと、その場で顔が変わります。気に入ったら「保存」。");
+      done();
+    }, undefined, (e) => { status("モデルを読めませんでした：" + e); done(); });
+  });
 }
 
+// 材質ごとの頂点の番号と、元の座標・材質の色を覚えておく
+function prepare(m) {
+  const g = m.geometry, idx = g.index.array;
+  const byMat = {};
+  g.groups.forEach((gr) => {
+    const name = m.material[gr.materialIndex].name;
+    const set = byMat[name] || (byMat[name] = new Set());
+    for (let i = gr.start; i < gr.start + gr.count; i++) set.add(idx[i]);
+  });
+  const mats = {};
+  m.material.forEach((mt) => { mats[mt.name] = mt; });
+  base = {
+    pos: g.attributes.position.array.slice(),
+    byMat: Object.fromEntries(Object.entries(byMat).map(([k, v]) => [k, Int32Array.from(v)])),
+    mats,
+    lashColor: mats["まつ毛"]?.color.clone(),
+  };
+}
+
+// ---- 形を変える（座標は three.js：顔は +Z 向き。face.json は PMX の座標なので Z を反転する）----
+const V3 = (a) => new THREE.Vector3(a[0], a[1], -a[2]);
+const smooth = (e0, e1, x) => { const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };
+
+function apply() {
+  if (!mesh || !meta) return;
+  const P = mesh.geometry.attributes.position.array, B = base.pos;
+  P.set(B);
+  const v0 = built, v1 = values, hd = meta.head, E = meta.eye;
+  const H = hd.H, rx = E.rx, ry = E.ry;
+
+  // 顔の幅と頬：高さごとに横を伸ばす（目・まつ毛・眉は形を伸ばさず、位置だけ動かす）
+  const widthRatio = (y) => {
+    const v = (y - hd.y0) / H / hd.eye_h - 1;
+    const t = smooth(-0.25, -0.85, v);
+    const f = (v1.face_width * (1 - v1.cheek * t)) / (v0.face_width * (1 - v0.cheek * t));
+    const neck = smooth(-0.95, -1.15, v);  // あごの下と首は変えない
+    return f * (1 - neck) + neck;
+  };
+  const eyeParts = new Set(["白目", "瞳", "まつ毛", "眉"]);
+  for (const [name, ids] of Object.entries(base.byMat)) {
+    if (eyeParts.has(name)) continue;
+    for (const i of ids) P[i * 3] = B[i * 3] * widthRatio(B[i * 3 + 1]);
+  }
+
+  // 目：白目・瞳・まつ毛の板を、目の中心の板の上の座標 (a: 目尻へ, b: 上へ, d: 外へ) で動かす
+  const S = v1.eye_size / v0.eye_size, Sy = S * (v1.eye_aspect / v0.eye_aspect);
+  const tilt0 = E.tilt, tilt1 = E.tilt - v0.eye_tilt + v1.eye_tilt;
+  const iw = v1.iris_w / v0.iris_w, ih = v1.iris_h / v0.iris_h, iy = (v1.iris_y - v0.iris_y) * ry;
+  const lk = v1.lash / v0.lash;
+  const ca = -E.iris_in * rx, cb = E.iris_y * ry;  // 瞳の中心（a, b）
+  const top = 0.92 * ry;  // まつ毛の帯はここより上を太くする
+  const rel = new THREE.Vector3(), out = new THREE.Vector3();
+  for (const side of Object.values(meta.sides)) {
+    const p0 = V3(side.p0), n = V3(side.n), e1 = V3(side.e1), sg = side.sign;
+    // 目の中心の移動：間隔（顔の面に沿って外へ、奥へ回り込むぶんも）、高さ、顔の幅
+    const x0 = p0.x;
+    const x1 = x0 * (v1.eye_spread / v0.eye_spread) * widthRatio(p0.y);
+    const R = v0.face_width * H * 0.8;
+    const q0 = new THREE.Vector3(x1, p0.y + (v1.eye_height - v0.eye_height) * H, p0.z - (x1 * x1 - x0 * x0) / (2 * R));
+    for (const name of eyeParts) {
+      const ids = base.byMat[name]; if (!ids) continue;
+      for (const i of ids) {
+        if (Math.sign(B[i * 3]) !== Math.sign(x0)) continue;
+        rel.set(B[i * 3] - p0.x, B[i * 3 + 1] - p0.y, B[i * 3 + 2] - p0.z);
+        if (name === "眉") {  // 眉は形を変えず、目の動きについて行く
+          out.copy(q0).add(rel);
+        } else {
+          let a = rel.dot(e1) * sg, b = rel.y;
+          const d = rel.dot(n);
+          b -= tilt0 * a;  // 傾きを外してから
+          if (name === "瞳") { a = ca + (a - ca) * iw; b = cb + (b - cb) * ih + iy; }
+          if (name === "まつ毛" && b > top) b = top + (b - top) * lk;
+          a *= S; b *= Sy;
+          b += tilt1 * a;
+          out.copy(q0).addScaledVector(e1, a * sg).addScaledVector(n, d);
+          out.y += b;
+        }
+        P[i * 3] = out.x; P[i * 3 + 1] = out.y; P[i * 3 + 2] = out.z;
+      }
+    }
+  }
+  mesh.geometry.attributes.position.needsUpdate = true;
+  mesh.geometry.computeBoundingSphere();
+
+  // 色と塗り：まつ毛の明るさは材質の色で、瞳と白目はテクスチャを描き直す
+  if (base.lashColor) base.mats["まつ毛"].color.copy(base.lashColor).multiplyScalar(v1.lash_light / v0.lash_light);
+  const irisKey = ["pupil", "highlight", "eye_color", "iris_w", "iris_h", "iris_y"].map((k) => v1[k]).join();
+  if (irisKey !== apply.irisKey) { apply.irisKey = irisKey; redraw("瞳", drawIris()); }
+  if (v1.white_shade !== apply.white) { apply.white = v1.white_shade; redraw("白目", drawWhite()); }
+}
+
+// ---- 目のテクスチャ（mmdgen/textures.py の iris・eye_white と同じ描き方）----
+const cl = (x) => Math.min(1, Math.max(0, x));
+const mix = (a, b, t) => a.map((x, i) => x * (1 - t) + b[i] * t);
+function hex2rgb(h) { return [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255); }
+function offsetLine(pts, th, k) {  // 輪郭を外へ th（ry 単位）ずらす
+  const P = pts.map(([a, b]) => [a * k, b]);
+  return P.map((p, i) => {
+    const q = P[Math.min(P.length - 1, i + 1)], r = P[Math.max(0, i - 1)];
+    let tx = q[0] - r[0], ty = q[1] - r[1]; const l = Math.hypot(tx, ty) || 1; tx /= l; ty /= l;
+    return [(p[0] - ty * th) / k, p[1] + tx * th];
+  });
+}
+function maskPath(ctx, pts, ext, n) {
+  const [A0, A1, B0, B1] = ext;
+  ctx.beginPath();
+  pts.forEach(([a, b], i) => {
+    const x = (a - A0) / (A1 - A0) * n, y = (B1 - b) / (B1 - B0) * n;
+    i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+  });
+  ctx.closePath();
+}
+function irisExt() {
+  const E = meta.eye, b = built, v = values;
+  const iris = E.iris * v.iris_w / b.iris_w, ih = E.iris_h * v.iris_h / b.iris_h, iy = E.iris_y + v.iris_y - b.iris_y;
+  return [-E.iris_in - iris, -E.iris_in + iris, iy - ih, iy + ih];
+}
+function canvas(n) { const c = document.createElement("canvas"); c.width = c.height = n; return c; }
+function drawIris() {
+  const n = 256, color = hex2rgb(values.eye_color), tint = [0.27, 0.18, 0.37];
+  const rim = color.map((c, i) => cl(c * 0.15 + tint[i] * 0.5));
+  const dark = color.map((c, i) => cl(c * 0.27 + tint[i] * 0.4));
+  const light = color.map((c) => cl(c * 0.45 + 0.55));
+  const glow = [0.98, 0.96, 0.80];
+  const pupil = color.map((c, i) => cl(c * 0.11 + tint[i] * 0.4));
+  const dots = [[-0.30, -0.05, 0.11, light], [0.10, 0.25, 0.08, color.map((c) => cl(c * 0.6 + 0.4))]];
+  const ps = values.pupil;
+  const paint = canvas(n), round = canvas(n);
+  const img = paint.getContext("2d").createImageData(n, n), rimg = round.getContext("2d").createImageData(n, n);
+  for (let py = 0; py < n; py++) for (let px = 0; px < n; px++) {
+    const dx = (px / (n - 1) - 0.5) / 0.47, dy = (py / (n - 1) - 0.5) / 0.47, r = Math.hypot(dx, dy);
+    let c = mix(dark, color, cl((dy + 0.35) / 0.55));
+    c = mix(c, light, cl((dy - 0.05) / 0.50));
+    c = mix(c, glow, cl((1 - Math.hypot(dx / 0.55, (dy - 0.80) / 0.42)) / 0.35 * 0.9));
+    c = mix(c, pupil, cl((1 - Math.hypot(dx / (0.28 * ps), (dy + 0.12) / (0.32 * ps))) / 0.25));
+    c = mix(c, rim, cl((r - 0.74) / 0.16));
+    for (const [cx, cy, rr, dc] of dots) c = mix(c, dc, cl((rr - Math.hypot(dx - cx, dy - cy)) / 0.04));
+    const o = (py * n + px) * 4;
+    img.data[o] = c[0] * 255; img.data[o + 1] = c[1] * 255; img.data[o + 2] = c[2] * 255; img.data[o + 3] = 255;
+    rimg.data[o + 3] = cl((1 - r) * 40) * 255;
+  }
+  paint.getContext("2d").putImageData(img, 0, 0);
+  round.getContext("2d").putImageData(rimg, 0, 0);
+  const cv = canvas(n), ctx = cv.getContext("2d");
+  ctx.filter = `blur(${n * 0.012}px)`;  // 全体をやわらかく
+  ctx.drawImage(paint, 0, 0);
+  ctx.filter = "none";
+  const hs = values.highlight;  // 白い光（ぼかさない）
+  if (hs > 0.01) { ctx.fillStyle = "#fafafa"; ctx.beginPath(); ctx.ellipse(n * 0.37, n * 0.30, n * 0.07 * hs, n * 0.10 * hs, 0, 0, 7); ctx.fill(); }
+  // 丸の外と、白目の輪郭の外を消す
+  ctx.globalCompositeOperation = "destination-in";
+  ctx.drawImage(round, 0, 0);
+  maskPath(ctx, offsetLine(meta.outline, 0.04, meta.eye.rx / meta.eye.ry), irisExt(), n);
+  ctx.fill();
+  ctx.globalCompositeOperation = "source-over";
+  return cv;
+}
+function drawWhite() {
+  const n = 256, cv = canvas(n), ctx = cv.getContext("2d"), ext = meta.ext.eye_white;
+  maskPath(ctx, meta.outline, ext, n); ctx.fillStyle = "#fff"; ctx.fill();
+  const m = ctx.getImageData(0, 0, n, n), d = m.data;
+  const px = (n - 1) / (ext[3] - ext[2]);
+  for (let x = 0; x < n; x++) {
+    let top = -1, bot = -1;
+    for (let y = 0; y < n; y++) if (d[(y * n + x) * 4 + 3] > 127) { if (top < 0) top = y; bot = y; }
+    if (top < 0) continue;
+    for (let y = top; y <= bot; y++) {
+      const sh = Math.pow(cl(1 - (y - top) / px / 1.30), 1.1) * values.white_shade;
+      let c = mix([0.97, 0.95, 0.97], [0.88, 0.81, 0.89], sh);
+      c = mix(c, [0.70, 0.66, 0.70], Math.pow(cl(1 - (bot - y) / px / 0.10), 2) * 0.20);
+      const o = (y * n + x) * 4; d[o] = c[0] * 255; d[o + 1] = c[1] * 255; d[o + 2] = c[2] * 255;
+    }
+  }
+  ctx.putImageData(m, 0, 0);
+  return cv;
+}
+function redraw(name, cv) {
+  const mt = base.mats[name]; if (!mt || !mt.map) return;
+  const old = mt.map, t = new THREE.CanvasTexture(cv);
+  // MMD のテクスチャは上下を反転しない（元のテクスチャは読み込み途中だと設定がまだ入っていないので写さない）
+  t.flipY = false; t.encoding = THREE.LinearEncoding; t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  mt.map = t; mt.needsUpdate = true;
+  if (old.isCanvasTexture) old.dispose();
+}
+
+// ---- スライダー ----
+function fmt(v, step) { const d = Math.max(0, -Math.floor(Math.log10(step))); return (+v).toFixed(d); }
+function renderRows() {
+  const box = document.getElementById("rows");
+  box.innerHTML = "";
+  const color = document.createElement("div");
+  color.className = "row"; color.dataset.name = "eye_color";
+  color.innerHTML = `<div class="top"><span class="name">瞳の色</span></div><input type="color" style="width:100%;height:28px;margin-top:4px">`;
+  const ci = color.querySelector("input");
+  ci.value = values.eye_color;
+  ci.oninput = () => { values.eye_color = ci.value; mark(); apply(); };
+  box.appendChild(color);
+  for (const s of meta.spec) {
+    const r = document.createElement("div");
+    r.className = "row"; r.dataset.name = s.name;
+    r.innerHTML = `<div class="top"><span class="name">${s.label}</span>
+      <span><span class="val"></span><button class="reset" title="初期値に戻す">↺</button></span></div>
+      <input type="range" min="${s.min}" max="${s.max}" step="${s.step}"><div class="help">${s.help}</div>`;
+    const inp = r.querySelector("input"), val = r.querySelector(".val");
+    const set = (v) => { values[s.name] = +v; inp.value = v; val.textContent = fmt(v, s.step); mark(); apply(); };
+    inp.value = values[s.name]; val.textContent = fmt(values[s.name], s.step);
+    inp.oninput = () => set(inp.value);
+    r.querySelector(".reset").onclick = () => set(s.default);
+    box.appendChild(r);
+  }
+  mark();
+}
+function mark() {
+  for (const s of meta.spec) document.querySelector(`.row[data-name="${s.name}"]`)?.classList.toggle("changed", Math.abs(values[s.name] - s.default) > 1e-9);
+  const dirty = meta.spec.some((s) => Math.abs(values[s.name] - built[s.name]) > 1e-9) || values.eye_color !== built.eye_color;
+  document.getElementById("save").textContent = dirty ? "保存（未保存の変更あり）" : "保存";
+}
+
+// ---- 保存：serve.py が動いていれば保存して正確に作り直す。なければ json をダウンロード ----
+function payload() {
+  const v = {};
+  meta.spec.forEach((s) => { v[s.name] = values[s.name]; });
+  if (values.eye_color !== meta.orig_eye_color) v.eye_color = values.eye_color;  // キャラ本来の色と違うときだけ
+  return v;
+}
 document.getElementById("save").onclick = async () => {
   const v = payload();
-  const r = await fetch("/api/face/save", { method: "POST", body: JSON.stringify({ m: key, values: v }) });
-  const j = await r.json();
-  if (!r.ok) { status("保存に失敗：" + j.error); return; }
-  saved = { ...v };
-  mark();
-  status(`保存しました：${j.saved}（python build.py でもこの値で作られます）`);
+  let saved = null;
+  try {
+    status("保存して正確に作り直しています…");
+    const r = await fetch("/api/face/save", { method: "POST", body: JSON.stringify({ m: key, values: v }) });
+    if (r.ok) saved = (await r.json()).saved;
+  } catch (e) { /* サーバーがない */ }
+  if (!saved) {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(v, null, 2) + "\n"], { type: "application/json" }));
+    a.download = `${key}.json`;
+    a.click();
+    status(`保存用のサーバー（python serve.py）が動いていないので、${key}.json をダウンロードしました。\n` +
+      `mmdgen/characters/face/ に置いて python build.py を実行すると反映されます。`);
+    return;
+  }
+  const r = await fetch("/api/face/build", { method: "POST", body: JSON.stringify({ m: key, values: v }) });
+  if (!r.ok) { status(`保存しました：${saved}\n作り直しに失敗しました（python build.py で作り直してください）`); return; }
+  await open(key);
+  status(`保存しました：${saved}\nこの値で作り直しました（python build.py でもこの値で作られます）`);
 };
-document.getElementById("revert").onclick = () => open(key);
+document.getElementById("revert").onclick = () => { values = { ...built }; renderRows(); apply(); };
 document.getElementById("defaults").onclick = () => {
-  values = defaultsAll(); colorTouched = values.eye_color !== undefined && saved.eye_color !== undefined; renderRows(); build();
+  meta.spec.forEach((s) => { values[s.name] = s.default; });
+  values.eye_color = meta.orig_eye_color;
+  renderRows(); apply();
 };
+
+window.tune = { drawIris, drawWhite, base: () => base, meta: () => meta };  // 確認用
 
 const chars = document.getElementById("chars");
 for (const [k, n] of Object.entries(NAMES)) {

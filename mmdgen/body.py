@@ -514,7 +514,7 @@ class Character:
         F = _face.get
         self.head = Head(eye_h=F("eye_height"), width=F("face_width"), jaw_x=F("cheek"))
         self.skin_color = skin_color
-        orig_eye = "#" + "".join(f"{int(round(c * 255)):02x}" for c in eye_color)
+        orig_eye = self._orig_eye = "#" + "".join(f"{int(round(c * 255)):02x}" for c in eye_color)
         if F("eye_color"):
             eye_color = tuple(int(F("eye_color")[i:i + 2], 16) / 255 for i in (1, 3, 5))
         self.eye_color = np.array(eye_color, float)
@@ -1089,6 +1089,8 @@ class Character:
             base_lip = m.add("mouth", h.decal(md, lip_base_ab, 0.0028), m.skin_fixed("頭"))
             base_in = m.add("mouth_in", h.decal(md, in_base_ab, 0.0048, closed=False), m.skin_fixed("頭"))
 
+        self._write_face_meta(ext, lash_c)
+
         vowels = {
             "あ": (1.05, 0.0095, -0.3, 0.0040),
             "い": (1.28, 0.0042, -0.5, 0.0012),
@@ -1122,6 +1124,33 @@ class Character:
                 chin_mask = np.clip((0.20 - h_rel) / 0.20, 0.0, 1.0) ** 1.3 * np.exp(-(hv[:, 0] / 0.032) ** 2)
                 hv[:, 1] -= jaw_drop * front_mask * chin_mask
                 m.add_morph_part(name, self._head_info, hv)
+
+    def _write_face_meta(self, ext, lash_c):
+        """顔の寸法を models/<キー>/face.json に書く。調整ページはこれを使い、作り直さずにブラウザでその場で目や顔を動かす。
+        座標は PMX と同じ（MMD 単位、顔は -Z 向き）。"""
+        import json
+        import os
+        s, h, E = self.m.scale, self.head, self.eye
+        sides = {}
+        for _, _, sg in SIDES:
+            p0, n, e1 = self.eye_frame(sg)
+            sides["L" if sg > 0 else "R"] = dict(p0=(p0 * s).tolist(), n=n.tolist(), e1=e1.tolist(), sign=sg)
+        meta = dict(
+            scale=s,
+            values={k: _face.get(k) for k in _face.DEFAULTS},
+            spec=[dict(name=n, label=l, min=a, max=b, step=st, default=d, help=hp) for n, l, a, b, st, d, hp in _face.SPEC],
+            head=dict(y0=h.y0 * s, H=h.H * s, eye_h=h.eye_h, zc=h.zc * s, width=h.width, jaw_x=h.jaw_x),
+            eye={k: (E[k] * s if k in ("rx", "ry") else E[k]) for k in ("rx", "ry", "tilt", "iris", "iris_h", "iris_y", "iris_in")},
+            ext={k: list(v) for k, v in ext.items()},
+            outline=eye_outline().tolist(),
+            eye_color="#" + "".join(f"{int(round(c * 255)):02x}" for c in self.eye_color),
+            orig_eye_color=self._orig_eye,
+            lash_color=[float(c) for c in lash_c],
+            sides=sides,
+        )
+        out = os.path.dirname(self.tex.dir)
+        with open(os.path.join(out, "face.json"), "w", encoding="utf-8") as f:
+            json.dump(meta, f, ensure_ascii=False, indent=1)
 
     # ---- 髪 ----
     def hair_material(self, key, name, color, tip=None):

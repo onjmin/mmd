@@ -39,14 +39,14 @@ python serve.py
 
 ## 顔を自分で調整する
 
-```bash
-python serve.py
-```
+ビューアと同じように開いた http://localhost:8765/viewer/tune.html （公開ページの viewer/tune.html でもよい）で、
+左のスライダー（目の大きさ・縦の長さ・間隔・高さ・傾き、瞳の幅・高さ・上下・瞳孔・光、まつ毛の太さと明るさ、白目の影、瞳の色、顔の幅、頬の張り）を動かすと、
+右の正面と斜めの顔がその場で変わる（ブラウザの中で頂点と目のテクスチャを動かすだけなので待ち時間がない）。上のボタンでキャラを切り替える。
 
-ブラウザで http://localhost:8765/viewer/tune.html を開く。左のスライダー（目の大きさ・縦の長さ・間隔・高さ・傾き、瞳の幅・高さ・上下・瞳孔・光、
-まつ毛の太さと明るさ、白目の影、瞳の色、顔の幅、頬の張り）を動かして離すと、数秒でそのキャラが作り直され、右に正面と斜めの顔が出る。
-上のボタンでキャラを切り替える。「保存」で `mmdgen/characters/face/<キー>.json` に書き、`python build.py` もこの値で作る。
-保存しないで閉じると `models/` には最後に試した形が残るので、`python build.py` で保存した値に戻す。
+「保存」を押したとき、`python serve.py` で開いていれば `mmdgen/characters/face/<キー>.json` に書いて正確に作り直す
+（プレビューは近似なので、目の高さを変えたときの鼻・口の位置などは作り直して初めて正しくなる）。
+`serve.py` がなければ `<キー>.json` がダウンロードされるので、`mmdgen/characters/face/` に置いて `python build.py` を実行する。
+寸法は作るときに書き出す `models/<キー>/face.json` から読む。
 
 ブラウザなしで正面の顔を PNG にするなら `python -m mmdgen.render feris out.png bare`（`bare` は髪と服を消して輪郭と目を見る、`face` は髪あり）。
 関数 `render()` は `yaw`（斜め・横から）と `clay=True`（色を消して凹凸だけ）も使える。
