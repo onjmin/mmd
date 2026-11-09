@@ -139,26 +139,28 @@ class TextureSet:
         bot = np.where(inside.any(0), n - 1 - inside[::-1].argmax(0), 0)[None, :]
         px = (n - 1) / (ext[3] - ext[2])  # ry 1 つぶんの画素数
         depth, near_bot = (rows - top) / px, (bot - rows) / px
-        shade = np.clip(1 - depth / 0.55, 0, 1) ** 1.5  # まつ毛の影はうっすら、上の縁の近くだけ
-        col = np.array([0.98, 0.97, 0.97]) * (1 - shade[..., None]) + np.array([0.82, 0.80, 0.86]) * shade[..., None]
+        # 真っ白にせず、上は淡い桃紫（まつ毛の影）から下へ白っぽくなるグラデーション（既製の萌えキャラの白目）
+        shade = np.clip(1 - depth / 1.30, 0, 1) ** 1.1
+        col = np.array([0.97, 0.95, 0.97]) * (1 - shade[..., None]) + np.array([0.88, 0.81, 0.89]) * shade[..., None]
         edge = np.clip(1 - near_bot / 0.10, 0, 1) ** 2 * 0.20
         col = col * (1 - edge[..., None]) + np.array([0.70, 0.66, 0.70]) * edge[..., None]
         img = Image.fromarray((np.dstack([np.clip(col, 0, 1), m]) * 255).astype(np.uint8), "RGBA")
         return self.save(img.resize((256, 256), Image.LANCZOS), name)
 
     def iris(self, name, color, ext, k):
-        """瞳：既製モデル（うか など）と同じ、色数の少ないベタ塗り。発光するようなグラデーションや筋は入れない。
-        太く濃い縁、上 4 割はまぶたの影で暗い色、下は元の色で、下の真ん中だけ少し明るい。大きめの濃い瞳孔。
-        光は左上の丸い白い点 1 つと、右下の小さな淡い点だけ。
+        """瞳：既製の萌えキャラ（音街ウナ公式モデル）の塗り方。どこも真っ黒・真っ白にせず、ぼかした柔らかい塗りにする。
+        外周は暗い紫寄りの太い縁、上はまぶたの影で暗く、下へ元の色から明るい色・淡い黄色へ抜ける。
+        瞳孔は大きめの暗い楕円で少し上寄り。小さな光の粒を 2 つ。左上の白い光はぼかさずに上に描く。
         正面を向いたときの白目の輪郭で切り抜き、目頭の外の肌に瞳がはみ出さないようにする。"""
         n = 256 * S
         color = np.asarray(color, float)
-        gray = color.mean()
-        base = np.clip(color * 0.85 + gray * 0.15, 0, 1)            # 少しくすませる
-        dark = np.clip(base * 0.45, 0, 1)                            # まぶたの影
-        light = np.clip(base * 0.75 + 0.25, 0, 1)                    # 下の明るい所
-        rim_col = np.clip(base * 0.25, 0, 1)
-        pupil_col = np.clip(base * 0.18, 0, 1)
+        tint = np.array([0.27, 0.18, 0.37])                          # 影に混ぜる紫
+        rim_col = np.clip(color * 0.30 * 0.5 + tint * 0.5, 0, 1)
+        dark = np.clip(color * 0.45 * 0.6 + tint * 0.4, 0, 1)
+        mid = np.clip(color, 0, 1)
+        light = np.clip(color * 0.45 + 0.55, 0, 1)
+        glow = np.array([0.98, 0.96, 0.80])                          # 下の淡い黄色
+        pupil_col = np.clip(color * 0.22 * 0.5 + tint * 0.5 * 0.8, 0, 1)
         y, x = np.mgrid[0:n, 0:n] / (n - 1)
         dx, dy = (x - 0.50) / 0.47, (y - 0.50) / 0.47
         r = np.sqrt(dx * dx + dy * dy)
@@ -166,33 +168,34 @@ class TextureSet:
         def blend(col, c2, t):
             t = np.clip(t, 0, 1)[..., None]
             return col * (1 - t) + np.asarray(c2) * t
-        col = np.broadcast_to(base, (n, n, 3)).copy()
-        # 上の影：ゆるい弧で区切ったベタ（境目だけ少しぼかす）
-        shade_edge = 0.44 + 0.06 * dx ** 2
-        col = blend(col, dark, (shade_edge - y) / 0.02 + 0.5)
-        # 下の明るい所：瞳孔の下のやわらかい山形
-        glow = np.sqrt((dx / 0.45) ** 2 + ((dy - 0.55) / 0.40) ** 2)
-        col = blend(col, light, (1 - glow) / 0.10)
-        # 瞳孔（縦長）
-        pr = np.sqrt((dx / 0.26) ** 2 + ((dy + 0.04) / 0.36) ** 2)
-        col = blend(col, pupil_col, (1 - pr) / 0.04)
+        # 縦のグラデーション：上 暗い → 真ん中 元の色 → 下 明るい
+        col = blend(np.broadcast_to(dark, (n, n, 3)).copy(), mid, (dy + 0.35) / 0.55)
+        col = blend(col, light, (dy - 0.05) / 0.50)
+        # 下の淡い黄色の山
+        g = np.sqrt((dx / 0.55) ** 2 + ((dy - 0.80) / 0.42) ** 2)
+        col = blend(col, glow, (1 - g) / 0.35 * 0.9)
+        # 瞳孔：大きめの暗い楕円、少し上寄り
+        pr = np.sqrt((dx / 0.28) ** 2 + ((dy + 0.12) / 0.32) ** 2)
+        col = blend(col, pupil_col, (1 - pr) / 0.25)
         # 太い縁
-        col = blend(col, rim_col, (r - 0.84) / 0.03)
-
+        col = blend(col, rim_col, (r - 0.74) / 0.16)
+        # 光の粒（明るい色の小さな丸を 2 つ）
+        for cx, cy, rr, c in ((-0.30, -0.05, 0.11, light), (0.10, 0.25, 0.08, np.clip(mid * 0.6 + 0.4, 0, 1))):
+            dd = np.sqrt((dx - cx) ** 2 + (dy - cy) ** 2)
+            col = blend(col, c, (rr - dd) / 0.04)
+        img = Image.fromarray((np.clip(col, 0, 1) * 255).astype(np.uint8), "RGB")
+        img = img.filter(ImageFilter.GaussianBlur(n * 0.012))        # 全体をやわらかく
         alpha = np.clip((1.0 - r) * 40.0, 0.0, 1.0)
         out = _offset(eye_outline(), np.full(len(eye_outline()), 0.04), k)
         alpha = alpha * _mask(_to_px(ext, n)(out), n)
-        img = Image.fromarray((np.clip(col, 0, 1) * 255).astype(np.uint8), "RGB")
         d = ImageDraw.Draw(img)
-        # 光：左上の丸い白い点 1 つ（まつ毛に隠れない高さ）と、右下の小さな淡い点
-        d.ellipse([n * 0.27, n * 0.30, n * 0.43, n * 0.44], fill=(255, 255, 255))
-        hi = tuple(int(v * 255) for v in np.clip(light * 0.5 + 0.5, 0, 1))
-        d.ellipse([n * 0.62, n * 0.68, n * 0.70, n * 0.75], fill=hi)
+        # 白い光：左上の縦長の楕円（ぼかさない）
+        d.ellipse([n * 0.30, n * 0.20, n * 0.44, n * 0.40], fill=(250, 250, 250))
         img.putalpha(Image.fromarray((alpha * 255).astype(np.uint8)))
         return self.save(img.resize((256, 256), Image.LANCZOS), name)
 
     def lash(self, ext, k, name="lash.png", color=(0.05, 0.04, 0.05)):
-        """上まつ毛：白目の上の縁に沿う帯。太さは白目の高さの 2 割弱で、
+        """上まつ毛：白目の上の縁に沿う帯。太さは白目の高さの 3 割ほどで、
         目頭の少し上で細い鉤として始まり、上の縁で太く、目尻の角でいちばん太くなって外側の縁を下の方まで包んで細る。
         目尻の外へのハネは付けない（顔の肌に根元が隠れて浮いた黒い点に見える）。上に細い二重の線、下まぶたは目尻から目の中ほどまで茶の線（ないと眼球がむき出しに見える）。"""
         n = 512 * S
@@ -205,15 +208,16 @@ class TextureSet:
         ic = int(np.argmin(np.linalg.norm(arc - EYE_CORNER, axis=1)))
         sc = s[ic]  # 目尻の角
         th = np.interp(s, [0.00, 0.06, 0.15, 0.32, sc - 0.08, sc, sc + (1 - sc) * 0.35, sc + (1 - sc) * 0.7, 1.00],
-                          [0.00, 0.08, 0.13, 0.16, 0.17, 0.20, 0.08, 0.03, 0.00])
+                          [0.00, 0.12, 0.20, 0.25, 0.28, 0.34, 0.16, 0.06, 0.00])  # 太い帯で目尻がいちばん太い
         # 白目の縁に少しかぶせて隙間を出さない（両端は細く尖らせる）
-        inner = _offset(arc, -0.06 * np.clip(th / 0.12, 0, 1), k)
+        # 白目の縁から内側へ深くかぶせ、瞳の上をまつ毛（上まぶた）が覆うようにする（白目が瞳の上に見えると見開いた目になる）
+        inner = _offset(arc, -0.22 * np.clip(th / 0.12, 0, 1), k)
         outer = _offset(arc, th, k)
         band = [tuple(p) for p in outer] + [tuple(p) for p in inner[::-1]]
         edge = _rgb(_mix(color, (0.30, 0.18, 0.17), 0.55))
         d.polygon(to_px(band), fill=edge)
         core_o = _offset(arc, th * 0.70, k)
-        core_i = _offset(arc, -0.04 * np.clip(th / 0.12, 0, 1), k)
+        core_i = _offset(arc, -0.16 * np.clip(th / 0.12, 0, 1), k)
         sel = (s > 0.03) & (s < 0.97)
         d.polygon(to_px([tuple(p) for p in core_o[sel][::-1]] + [tuple(p) for p in core_i[sel]]), fill=_rgb(color))
 

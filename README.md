@@ -48,6 +48,9 @@ git clone --depth 1 https://github.com/mmdagent-ex/uka.git models/uka_ref
 python -m mmdgen.head_scan
 ```
 
+顔の幅（頬の丸い萌え顔）・目の大きさと間隔・瞳／白目／まつ毛の塗り方は、音街ウナ公式 MMD モデル（SynthesizerV2 版、
+https://otomachiuna.jp/download/download-detail/ ）を手本に合わせている。再配布禁止なので `models/una_ref/model.pmx` に手元で展開して比べるだけにする。
+
 頭の形の表は CG アバター「うか」（CC-BY 4.0）から作っている：CG-CA Uka (c) 2023-2024 by Nagoya Institute of Technology, Moonshot R&D Goal 1 Avatar Symbiotic Society
 
 ## 利用規約について

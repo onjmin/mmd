@@ -1,6 +1,10 @@
 """既製の美少女モデルの顔の肌を輪切りにして、頭の形の表 mmdgen/head_shape.py を書き出す。
 
-python -m mmdgen.head_scan [uka|n4d]（既定は uka）
+python -m mmdgen.head_scan [uka|una|n4d]（既定は uka）
+
+una：音街ウナ公式 MMD モデル（SynthesizerV2 版、https://otomachiuna.jp/download/download-detail/）を models/una_ref/model.pmx に展開したもの。
+  非営利・そのままの再配布禁止なので、リポジトリには入れず、測った数値だけを使う。耳は顔の肌とつながっているので除いて測る。
+  後頭部の真ん中の肌がない（髪と帽子で隠れる）ので頭一周の表には使えない。正面の輪郭や目の大きさを比べる手本に使う。
 
 uka：CG アバター「うか」（https://github.com/mmdagent-ex/uka、CC-BY 4.0）を models/uka_ref/ に clone したもの。
   CG-CA Uka (c) 2023-2024 by Nagoya Institute of Technology, Moonshot R&D Goal 1 Avatar Symbiotic Society
@@ -22,6 +26,9 @@ from .measure import material_vertices
 ROOT = Path(__file__).resolve().parent.parent
 # 元のモデル：ファイル・顔の肌の材質・目の材質（白目と瞳。顔の肌の目の穴を埋めるのに使う）
 SOURCES = {
+    # 耳は顔の肌とつながっているので、頭の幅より外・耳の高さ・後ろ寄りの三角形を除く（重心で判定）
+    "una": dict(path=ROOT / "models" / "una_ref" / "model.pmx", face=("顔", "首"), eyes=("白目",),
+                drop=lambda c: (np.abs(c[:, 0]) > 1.08) & (c[:, 1] > 14.55) & (c[:, 1] < 15.65) & (c[:, 2] > -0.05)),
     "uka": dict(path=ROOT / "models" / "uka_ref" / "MS_Uka.pmx", face=("頭",), eyes=("目",)),
     "n4d": dict(path=ROOT / "models" / "tabane_roze_n4d" / "tabane_roze_n4d.pmx",
                 face=("material_face", "material_nose"), eyes=("material_eyewhites",), iris=("material_eyer", "material_eyel")),
@@ -34,8 +41,8 @@ SCAN_PHI = np.arange(0, 180.1, 2.5)
 SOCKET = 0.35  # 目の穴を白目の奥へ下げる割合（0 で肌どうしを平らにつなぐ、1 で白目の板そのまま）
 
 
-def _hits(tri, org, dirs):
-    """水平な光線（org から dirs へ）が三角形に当たる距離の最大値（当たらなければ nan）。"""
+def _hits(tri, org, dirs, first=False):
+    """水平な光線（org から dirs へ）が三角形に当たる距離の最大値（first なら最小値。当たらなければ nan）。"""
     v0, e1, e2 = tri[:, 0], tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0]
     out = np.full(len(dirs), np.nan)
     for k, d in enumerate(dirs):
@@ -50,7 +57,7 @@ def _hits(tri, org, dirs):
         t = np.einsum("ij,ij->i", e2, q) * inv
         hit = ok & (u >= 0) & (v >= 0) & (u + v <= 1) & (t > 0)
         if hit.any():
-            out[k] = t[hit].max()
+            out[k] = t[hit].min() if first else t[hit].max()
     return out
 
 
@@ -89,7 +96,10 @@ def scan(key="uka"):
         idx = info["indices"][start:start + m["faces"] * 3].reshape(-1, 3)
         start += m["faces"] * 3
         if m["name"] in src["face"]:
-            tris.append(info["positions"][idx])
+            T = info["positions"][idx]
+            if "drop" in src:
+                T = T[~src["drop"](T.mean(1))]
+            tris.append(T)
         elif m["name"] in src["eyes"]:
             whites.append(info["positions"][idx])
     tris, whites = np.vstack(tris), np.vstack(whites)
@@ -98,9 +108,10 @@ def scan(key="uka"):
     # 中心軸：目の高さの輪切りの前後の真ん中。首の中を通るので、あごの下から首の付け根まで同じ軸で測れる
     near = tris[(tris[:, :, 1].min(1) <= eye_y) & (tris[:, :, 1].max(1) >= eye_y)]
     far = 10.0 * L
-    z_front = far - _hits(near, np.array([[0.0, eye_y, far]]), np.array([[0.0, 0.0, -1.0]]))[0]
-    z_back = _hits(near, np.array([[0.0, eye_y, -far]]), np.array([[0.0, 0.0, 1.0]]))[0] - far
+    z_front = far - _hits(near, np.array([[1e-4, eye_y, far]]), np.array([[0.0, 0.0, -1.0]]))[0]
+    z_back = _hits(near, np.array([[1e-4, eye_y, -far]]), np.array([[0.0, 0.0, 1.0]]))[0] - far
     zc = (z_front + z_back) / 2
+    print("前", round(z_front, 3), "後ろ", round(z_back, 3), "軸", round(zc, 3))
     iris = eyes[eyes[:, 0] > 0]
     eye_yaw = float(np.degrees(np.arctan2(iris[:, 0].mean(), zc - iris[:, 2].mean())))
     def measure(T):
@@ -115,7 +126,7 @@ def scan(key="uka"):
                 for sg in (1, -1):
                     a = np.radians(ph) * sg
                     d = np.array([np.sin(a), 0.0, -np.cos(a)])
-                    r.append(_hits(near, np.array([[0.0, y, zc]]), d[None, :])[0])
+                    r.append(_hits(near, np.array([[1e-4, y, zc]]), d[None, :], first=src.get("first", False))[0])
                 r = [x for x in r if np.isfinite(x)]
                 if r:
                     table[i, j] = np.mean(r) / L

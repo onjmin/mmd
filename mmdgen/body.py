@@ -293,10 +293,14 @@ EYE_LID = 0.0016   # 上まぶたの帯の盛り上がり
 
 # 萌えキャラの頭の比率（あご 0〜頭頂 1）：眉間 0.5、目尻 0.375、鼻先 0.25、口 0.125（頭頂〜あごの半分が眉間、眉間〜あごの半分が鼻先…）。
 # 頭蓋は大人より横に広く丸く、目から下の顔は短く、あごへ向かって細く小さくなる（赤ちゃんの頭蓋骨に近い）。
-HEAD_WIDTH = 0.47   # 横の大きさ（表の 1 が頭の高さの何倍か）。表の元の大人のモデルは 0.424
-HEAD_DEPTH = 0.43   # 前後の大きさ（同じく）
-JAW_X = 0.14        # 目の下からあごへ向かって横幅を細める割合（あごの下・首はこのぶん細い）
-JAW_Z = 0.07        # 同じく前後
+# 横幅は既製の萌えキャラ（音街ウナ公式モデル）の正面の輪郭に合わせる：あご〜頭頂を 1 として、
+# 顔の幅は口の高さ 0.76・目の高さ 0.76・おでこ 0.83（頬の丸い横に広い顔。大人のモデルは口の高さで細い V 字）。
+HEAD_WIDTH = 0.52   # 横の大きさ（表の 1 が頭の高さの何倍か）。表の元の大人のモデルは 0.424
+HEAD_DEPTH = 0.45   # 前後の大きさ（同じく）
+JAW_X = -0.16       # 目の下からあごへ向かって横幅を変える割合（負で広げる＝頬を丸く張らせる）
+JAW_Z = 0.0         # 同じく前後
+NECK_W = 0.40       # あごの下〜首の横の大きさ（顔を広げても首は細いまま）
+NECK_D = 0.40       # 同じく前後
 
 
 class Head:
@@ -327,8 +331,14 @@ class Head:
 
     def scales(self, h):
         """高さ h での表の 1 あたりの横・前後の長さ。"""
-        t = smoothstep(-0.25, -1.0, self._v(h))
-        return HEAD_WIDTH * self.H * (1 - JAW_X * t), HEAD_DEPTH * self.H * (1 - JAW_Z * t)
+        t = smoothstep(-0.25, -0.85, self._v(h))
+        return HEAD_WIDTH * (1 - JAW_X * t) * self.H, HEAD_DEPTH * (1 - JAW_Z * t) * self.H
+
+    def _neck(self, h, phi):
+        """あごの下・首の所（1）か顔（0）か。あごの下の線はあご先（目の線〜あご先 = -1）から耳の下（-0.6）へ斜めに上がる。"""
+        aphi = np.abs(np.arctan2(np.sin(phi), np.cos(phi)))
+        v_line = -1.0 + 0.40 * np.sin(np.minimum(aphi, np.pi / 2)) ** 2
+        return smoothstep(v_line + 0.02, v_line - 0.14, self._v(h))
 
     def table_phi(self, h, x, z):
         """点 (x, z) が表のどの向きにあるか（横・前後の伸び縮みを戻して測る）。"""
@@ -344,6 +354,10 @@ class Head:
         h_c = np.clip(h, self.h_min, 1)
         rho = self.radius(h_c, phi)
         sx, sz = self.scales(h_c)
+        # あごの下と首は、顔を広げたぶんを戻して細いままにする（顔の貼り物を置く point・project は顔の所しか使わない）
+        nk = self._neck(h_c, phi)
+        sx = sx * (1 - nk) + NECK_W * self.H * nk
+        sz = sz * (1 - nk) + NECK_D * self.H * nk
         x, zf = rho * np.sin(phi) * sx, rho * np.cos(phi) * sz
         y = self.y0 + h_c * self.H
         p = np.stack(np.broadcast_arrays(x, y, self.zc - zf), -1)
@@ -504,7 +518,7 @@ class Character:
         # 目の中心は美少女モデルの瞳の向きより少し外（既製モデルのずんだもん・ミクは目と目の間が目 1 つ分近く空く）
         p_eye = hd.surface(hd.eye_h, np.radians(_HS.EYE_YAW * 1.07))
         eye_yaw = float(np.arctan2(p_eye[0], hd.c[2] - p_eye[2]))
-        self.eye = dict(yaw=eye_yaw, h=hd.eye_h, rx=0.0172, ry=0.0063, top=0.88, tilt=0.0, iris=0.56, iris_in=0.28)
+        self.eye = dict(yaw=eye_yaw, h=hd.eye_h, rx=0.0172, ry=0.0063, top=0.88, tilt=0.0, iris=0.70, iris_h=1.05, iris_y=-0.06, iris_in=0.05)
         self.eye.update(eye or {})
         self.eye["pitch"] = self.head.pitch_at(self.eye["h"], self.eye["yaw"])
         self.mouth = dict(rx=0.0080, ry=0.0010, smile=1.0, open_bottom=1.0, h=hd.eye_h * (1 - 0.66),
@@ -934,13 +948,15 @@ class Character:
         k = E["rx"] / E["ry"]
         ext = {"eye_white": (-1.0, 1.0, -1.0, 1.0),
                # 瞳は幅の 1.05 倍の縦長で、目の高さいっぱい。上はまつ毛、下は下の縁で少し切られる
-               # 中心を少し上げ、上まつ毛に軽くかかるようにする（白目が瞳を一周すると見開いた目に見える）
+                              # 瞳の幅は目の幅の iris 倍、高さは目の高さの iris_h 倍。既製の萌えキャラと同じく目の高さいっぱいの縦長にし、上はまつ毛の下に入り、下は下まぶたに触れる
                "iris": (-E["iris_in"] - E["iris"], -E["iris_in"] + E["iris"],
-                        0.10 - 1.05 * E["iris"] * k, 0.10 + 1.05 * E["iris"] * k),
+                        E["iris_y"] - E["iris_h"], E["iris_y"] + E["iris_h"]),
                "lash": (-1.14, 1.45, -1.0, 1.85)}
         m.material("eye_white", "白目", (1, 1, 1), tex=T.eye_white(ext["eye_white"], k), **noedge)
         m.material("iris", "瞳", self.eye_color, tex=T.iris("iris.png", self.eye_color, ext["iris"], k), **noedge)
-        m.material("lash", "まつ毛", (0.1, 0.06, 0.07), tex=T.lash(ext["lash"], k), **noedge)
+        # まつ毛は真っ黒にせず、瞳の色を混ぜた暗い紫寄りの色（既製の萌えキャラと同じ。黒と白目の強い差は怖く見える）
+        lash_c = _mix_c(self.eye_color * 0.45, (0.30, 0.20, 0.34), 0.6)
+        m.material("lash", "まつ毛", lash_c, tex=T.lash(ext["lash"], k, color=lash_c), **noedge)
         # 眉は髪色そのままでなく、赤みのある焦げ茶に寄せる（既製モデルの眉の色）
         bc = brow_color if brow_color is not None else _mix_c(np.asarray(self.hair_color) * 0.60, (0.40, 0.20, 0.20), 0.5)
         m.material("brow", "眉", bc, tex=T.brow("brow.png", bc), **noedge)
