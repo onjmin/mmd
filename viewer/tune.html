@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>顔の調整</title>
+<style>
+  :root { --bg: #e9e6ef; --panel: #fff; --ink: #222; --sub: #666; --line: #d8d4e0; --accent: #5b4bb7; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 13px system-ui, sans-serif; display: flex; height: 100vh; }
+  #panel { width: 330px; flex: none; background: var(--panel); border-right: 1px solid var(--line); overflow-y: auto; padding: 12px 14px; }
+  h1 { font-size: 15px; margin: 0 0 8px; }
+  .chars button { margin: 0 4px 6px 0; padding: 4px 10px; border: 1px solid var(--line); background: #f6f5f9; border-radius: 6px; cursor: pointer; }
+  .chars button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .row { margin: 10px 0; }
+  .row .top { display: flex; justify-content: space-between; align-items: baseline; }
+  .row .name { font-weight: 600; }
+  .row .val { font-variant-numeric: tabular-nums; color: var(--sub); }
+  .row .help { color: var(--sub); font-size: 11px; margin-top: 1px; }
+  .row input[type=range] { width: 100%; margin: 4px 0 0; }
+  .row.changed .name::after { content: " ●"; color: var(--accent); font-size: 10px; }
+  .row button.reset { border: none; background: none; color: var(--sub); cursor: pointer; font-size: 11px; padding: 0 0 0 6px; }
+  .actions { position: sticky; bottom: -12px; background: var(--panel); padding: 10px 0 12px; border-top: 1px solid var(--line); display: flex; gap: 6px; flex-wrap: wrap; }
+  .actions button { padding: 6px 10px; border-radius: 6px; border: 1px solid var(--line); background: #f6f5f9; cursor: pointer; }
+  .actions button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  #status { font-size: 12px; color: var(--sub); min-height: 1.4em; margin-top: 4px; width: 100%; }
+  #views { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; min-width: 0; }
+  #views figure { margin: 0; position: relative; background: var(--bg); min-height: 0; }
+  #views iframe { width: 100%; height: 100%; border: 0; display: block; }
+  #views figcaption { position: absolute; left: 8px; top: 6px; font-size: 12px; color: var(--sub); background: #fffc; padding: 1px 6px; border-radius: 4px; }
+  #busy { position: fixed; right: 12px; top: 10px; background: var(--accent); color: #fff; padding: 4px 10px; border-radius: 12px; display: none; }
+  body.busy #busy { display: block; }
+  @media (max-width: 760px) { body { flex-direction: column; height: auto; } #panel { width: 100%; } #views { height: 70vh; } }
+</style>
+</head>
+<body>
+<div id="panel">
+  <h1>顔の調整</h1>
+  <div class="chars" id="chars"></div>
+  <div id="rows"></div>
+  <div class="actions">
+    <button class="primary" id="save">保存</button>
+    <button id="revert">保存した値に戻す</button>
+    <button id="defaults">全部初期値に</button>
+    <div id="status">読み込み中…</div>
+  </div>
+</div>
+<div id="views">
+  <figure><iframe id="v0"></iframe><figcaption>正面</figcaption></figure>
+  <figure><iframe id="v1"></iframe><figcaption>斜め 35°</figcaption></figure>
+</div>
+<div id="busy">作り直し中…</div>
+<script>
+const NAMES = { tabane_roze: "ロゼ", chikune_kiriko: "キリコ", feris: "フェリス" };
+let key = new URLSearchParams(location.search).get("m") || "tabane_roze";
+let spec = [], values = {}, saved = {}, effective = {};
+let timer = null, building = false, again = false, colorTouched = false;
+// 瞳の色は触ったとき（か保存してあるとき）だけ送る。触らずに送ると色の丸めでモデルがわずかに変わる
+function payload() { const v = { ...values }; if (!colorTouched && saved.eye_color === undefined) delete v.eye_color; return v; }
+const status = (t) => { document.getElementById("status").textContent = t; };
+
+function showViews() {
+  const base = `index.html?m=${key}&cam=face&ui=0&outline=1&hide=${encodeURIComponent("ヘッドセット")}`;
+  document.getElementById("v0").src = `${base}&yaw=0&t=${Date.now()}`;
+  document.getElementById("v1").src = `${base}&yaw=35&t=${Date.now()}`;
+}
+
+function fmt(v, step) { const d = Math.max(0, -Math.floor(Math.log10(step))); return (+v).toFixed(d); }
+
+function renderRows() {
+  const box = document.getElementById("rows");
+  box.innerHTML = "";
+  const color = document.createElement("div");
+  color.className = "row";
+  color.innerHTML = `<div class="top"><span class="name">瞳の色</span><span class="val"></span></div>
+    <input type="color" style="width:100%;height:28px;margin-top:4px">`;
+  const ci = color.querySelector("input");
+  ci.value = values.eye_color || "#336699";
+  ci.onchange = () => { values.eye_color = ci.value; colorTouched = true; mark(); schedule(); };
+  box.appendChild(color);
+  for (const s of spec) {
+    const r = document.createElement("div");
+    r.className = "row";
+    r.dataset.name = s.name;
+    r.innerHTML = `<div class="top"><span class="name">${s.label}</span>
+      <span><span class="val"></span><button class="reset" title="初期値に戻す">↺</button></span></div>
+      <input type="range" min="${s.min}" max="${s.max}" step="${s.step}">
+      <div class="help">${s.help}</div>`;
+    const inp = r.querySelector("input"), val = r.querySelector(".val");
+    inp.value = values[s.name];
+    val.textContent = fmt(values[s.name], s.step);
+    inp.oninput = () => { values[s.name] = +inp.value; val.textContent = fmt(inp.value, s.step); mark(); };
+    inp.onchange = schedule;  // つまみを離したら作り直す
+    r.querySelector(".reset").onclick = () => { values[s.name] = s.default; inp.value = s.default; val.textContent = fmt(s.default, s.step); mark(); schedule(); };
+    box.appendChild(r);
+  }
+  mark();
+}
+
+function mark() {
+  for (const s of spec) {
+    const r = document.querySelector(`.row[data-name="${s.name}"]`);
+    if (r) r.classList.toggle("changed", Math.abs(values[s.name] - s.default) > 1e-9);
+  }
+  const base = { ...defaultsAll(), ...saved };
+  if (saved.eye_color === undefined) base.eye_color = effective.eye_color;
+  const dirty = JSON.stringify(pick(values)) !== JSON.stringify(pick(base));
+  document.getElementById("save").textContent = dirty ? "保存（未保存の変更あり）" : "保存";
+}
+function defaultsAll() { const d = { eye_color: effective.eye_color }; spec.forEach((s) => d[s.name] = s.default); return d; }
+function pick(v) { const o = {}; spec.forEach((s) => o[s.name] = +v[s.name]); o.eye_color = v.eye_color; return o; }
+
+function schedule() { clearTimeout(timer); timer = setTimeout(build, 150); }
+async function build() {
+  if (building) { again = true; return; }
+  building = true; document.body.classList.add("busy"); status("作り直し中…");
+  try {
+    const r = await fetch("/api/face/build", { method: "POST", body: JSON.stringify({ m: key, values: payload() }) });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error);
+    status(`作り直しました（${j.seconds.toFixed(1)} 秒）`);
+    showViews();
+  } catch (e) { status("失敗：" + e.message); console.error(e); }
+  building = false; document.body.classList.remove("busy");
+  if (again) { again = false; build(); }
+}
+
+async function open(k) {
+  key = k;
+  history.replaceState(null, "", `?m=${k}`);
+  document.querySelectorAll(".chars button").forEach((b) => b.classList.toggle("on", b.dataset.k === k));
+  document.body.classList.add("busy"); status("読み込み中…");
+  const r = await fetch(`/api/face?m=${k}`);
+  const j = await r.json();
+  document.body.classList.remove("busy");
+  if (!r.ok) { status("失敗：" + j.error); return; }
+  spec = j.spec; saved = j.saved; values = j.values; colorTouched = false;
+  effective = { eye_color: j.original_eye_color };  // キャラの元の色
+  renderRows();
+  status(Object.keys(saved).length ? "保存した値で表示しています" : "まだ保存した値はありません（キャラの元の形）");
+  showViews();
+}
+
+document.getElementById("save").onclick = async () => {
+  const v = payload();
+  const r = await fetch("/api/face/save", { method: "POST", body: JSON.stringify({ m: key, values: v }) });
+  const j = await r.json();
+  if (!r.ok) { status("保存に失敗：" + j.error); return; }
+  saved = { ...v };
+  mark();
+  status(`保存しました：${j.saved}（python build.py でもこの値で作られます）`);
+};
+document.getElementById("revert").onclick = () => open(key);
+document.getElementById("defaults").onclick = () => {
+  values = defaultsAll(); colorTouched = values.eye_color !== undefined && saved.eye_color !== undefined; renderRows(); build();
+};
+
+const chars = document.getElementById("chars");
+for (const [k, n] of Object.entries(NAMES)) {
+  const b = document.createElement("button");
+  b.textContent = n; b.dataset.k = k; b.onclick = () => open(k);
+  chars.appendChild(b);
+}
+open(key);
+</script>
+</body>
+</html>

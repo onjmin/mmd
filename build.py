@@ -3,6 +3,7 @@
 import os
 import sys
 
+from mmdgen import face
 from mmdgen.characters import feris, kiriko, roze
 
 TARGETS = {"tabane_roze": roze, "chikune_kiriko": kiriko, "feris": feris}
@@ -13,6 +14,7 @@ def main(names):
     for key in names or TARGETS:
         out = os.path.join(root, "models", key)
         os.makedirs(out, exist_ok=True)
+        face.use(face.load(key))  # 調整ページで保存した顔の調整値（mmdgen/characters/face/<キー>.json）
         model = TARGETS[key].build(out)
         path = os.path.join(out, key + ".pmx")
         model.save(path)

@@ -5,6 +5,8 @@ import os
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
+from . import face as _face
+
 S = 4  # 描いてから縮小してアンチエイリアスをかける倍率
 
 
@@ -140,7 +142,7 @@ class TextureSet:
         px = (n - 1) / (ext[3] - ext[2])  # ry 1 つぶんの画素数
         depth, near_bot = (rows - top) / px, (bot - rows) / px
         # 真っ白にせず、上は淡い桃紫（まつ毛の影）から下へ白っぽくなるグラデーション（既製の萌えキャラの白目）
-        shade = np.clip(1 - depth / 1.30, 0, 1) ** 1.1
+        shade = np.clip(1 - depth / 1.30, 0, 1) ** 1.1 * _face.get("white_shade")
         col = np.array([0.97, 0.95, 0.97]) * (1 - shade[..., None]) + np.array([0.88, 0.81, 0.89]) * shade[..., None]
         edge = np.clip(1 - near_bot / 0.10, 0, 1) ** 2 * 0.20
         col = col * (1 - edge[..., None]) + np.array([0.70, 0.66, 0.70]) * edge[..., None]
@@ -175,7 +177,8 @@ class TextureSet:
         g = np.sqrt((dx / 0.55) ** 2 + ((dy - 0.80) / 0.42) ** 2)
         col = blend(col, glow, (1 - g) / 0.35 * 0.9)
         # 瞳孔：大きめの暗い楕円、少し上寄り
-        pr = np.sqrt((dx / 0.28) ** 2 + ((dy + 0.12) / 0.32) ** 2)
+        ps = _face.get("pupil")
+        pr = np.sqrt((dx / (0.28 * ps)) ** 2 + ((dy + 0.12) / (0.32 * ps)) ** 2)
         col = blend(col, pupil_col, (1 - pr) / 0.25)
         # 太い縁
         col = blend(col, rim_col, (r - 0.74) / 0.16)
@@ -190,7 +193,10 @@ class TextureSet:
         alpha = alpha * _mask(_to_px(ext, n)(out), n)
         d = ImageDraw.Draw(img)
         # 白い光：左上の縦長の楕円（ぼかさない）
-        d.ellipse([n * 0.30, n * 0.20, n * 0.44, n * 0.40], fill=(250, 250, 250))
+        hs = _face.get("highlight")
+        if hs > 0.01:
+            cx, cy, hw, hh = 0.37, 0.30, 0.07 * hs, 0.10 * hs
+            d.ellipse([n * (cx - hw), n * (cy - hh), n * (cx + hw), n * (cy + hh)], fill=(250, 250, 250))
         img.putalpha(Image.fromarray((alpha * 255).astype(np.uint8)))
         return self.save(img.resize((256, 256), Image.LANCZOS), name)
 
@@ -208,7 +214,7 @@ class TextureSet:
         ic = int(np.argmin(np.linalg.norm(arc - EYE_CORNER, axis=1)))
         sc = s[ic]  # 目尻の角
         th = np.interp(s, [0.00, 0.06, 0.15, 0.32, sc - 0.08, sc, sc + (1 - sc) * 0.35, sc + (1 - sc) * 0.7, 1.00],
-                          [0.00, 0.12, 0.20, 0.25, 0.28, 0.34, 0.16, 0.06, 0.00])  # 太い帯で目尻がいちばん太い
+                          [0.00, 0.12, 0.20, 0.25, 0.28, 0.34, 0.16, 0.06, 0.00]) * _face.get("lash")  # 太い帯で目尻がいちばん太い
         # 白目の縁に少しかぶせて隙間を出さない（両端は細く尖らせる）
         # 白目の縁から内側へ深くかぶせ、瞳の上をまつ毛（上まぶた）が覆うようにする（白目が瞳の上に見えると見開いた目になる）
         inner = _offset(arc, -0.22 * np.clip(th / 0.12, 0, 1), k)

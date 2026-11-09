@@ -37,6 +37,17 @@ python serve.py
 - 「物理」のチェックを外すと髪やスカートが揺れなくなる
 - `viewer/?m=feris&motion=run&at=0.4` のように開くと、その動きの 0.4 秒目で止まる（見比べや記録用）
 
+## 顔を自分で調整する
+
+```bash
+python serve.py
+```
+
+ブラウザで http://localhost:8765/viewer/tune.html を開く。左のスライダー（目の大きさ・縦の長さ・間隔・高さ・傾き、瞳の幅・高さ・上下・瞳孔・光、
+まつ毛の太さと明るさ、白目の影、瞳の色、顔の幅、頬の張り）を動かして離すと、数秒でそのキャラが作り直され、右に正面と斜めの顔が出る。
+上のボタンでキャラを切り替える。「保存」で `mmdgen/characters/face/<キー>.json` に書き、`python build.py` もこの値で作る。
+保存しないで閉じると `models/` には最後に試した形が残るので、`python build.py` で保存した値に戻す。
+
 ブラウザなしで正面の顔を PNG にするなら `python -m mmdgen.render feris out.png bare`（`bare` は髪と服を消して輪郭と目を見る、`face` は髪あり）。
 関数 `render()` は `yaw`（斜め・横から）と `clay=True`（色を消して凹凸だけ）も使える。
 

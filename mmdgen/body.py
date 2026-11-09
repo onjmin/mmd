@@ -5,6 +5,7 @@ import numpy as np
 from . import head_shape as _HS
 from .textures import eye_outline
 from . import pmx
+from . import face as _face
 from .builder import _merge_seams
 from .geom import (UP, MeshData, catmull, ellipsoid, loft, norm, ring, rot_axes, smoothstep, tube, vertex_normals, TAU)
 
@@ -311,8 +312,9 @@ class Head:
     z は表の軸（目の高さで頭の前後の真ん中）の前後位置。元のモデルと同じく、首の中心より少し前に置く。
     r は髪の面を置くための大きさの目安（楕円体の半径）。"""
 
-    def __init__(self, chin_y=0.860, height=0.138, z=-0.0075, eye_h=0.375):
+    def __init__(self, chin_y=0.860, height=0.138, z=-0.0075, eye_h=0.375, width=HEAD_WIDTH, jaw_x=JAW_X):
         self.H, self.y0, self.eye_h = height, chin_y, eye_h
+        self.width, self.jaw_x = width, jaw_x
         self.L = eye_h * height  # 目の線〜あご先
         self.zc = z
         self.vc = 1.0 / eye_h - 1.0  # 頭頂（目の線からの高さ、目の線〜あご先 = 1）
@@ -322,7 +324,7 @@ class Head:
         vs = np.linspace(-1.0, _HS.V_CROWN, 60)
         side = _hs_lookup(vs, np.pi / 2, _HS.V_CROWN).max()
         fb = (_hs_lookup(vs, 0.0, _HS.V_CROWN).max() + _hs_lookup(vs, np.pi, _HS.V_CROWN).max()) / 2
-        self.r = np.array([side * HEAD_WIDTH, 0.50, fb * HEAD_DEPTH]) * height
+        self.r = np.array([side * width, 0.50, fb * HEAD_DEPTH]) * height
 
     def _v(self, h):
         """高さ h を表の高さ v（目の線 0、あご先 -1）に直す。目の線より上は、表の頭頂がこの頭の頭頂に来るよう伸び縮みさせる。"""
@@ -332,7 +334,7 @@ class Head:
     def scales(self, h):
         """高さ h での表の 1 あたりの横・前後の長さ。"""
         t = smoothstep(-0.25, -0.85, self._v(h))
-        return HEAD_WIDTH * (1 - JAW_X * t) * self.H, HEAD_DEPTH * (1 - JAW_Z * t) * self.H
+        return self.width * (1 - self.jaw_x * t) * self.H, HEAD_DEPTH * (1 - JAW_Z * t) * self.H
 
     def _neck(self, h, phi):
         """あごの下・首の所（1）か顔（0）か。あごの下の線はあご先（目の線〜あご先 = -1）から耳の下（-0.6）へ斜めに上がる。"""
@@ -508,18 +510,32 @@ class Character:
         self.m = model
         self.tex = tex
         self.hair_color = hair_color
-        self.head = Head()
+        # 顔の調整値（mmdgen/face.py。調整ページで人が決めてキャラごとの json に保存したもの）
+        F = _face.get
+        self.head = Head(eye_h=F("eye_height"), width=F("face_width"), jaw_x=F("cheek"))
         self.skin_color = skin_color
+        orig_eye = "#" + "".join(f"{int(round(c * 255)):02x}" for c in eye_color)
+        if F("eye_color"):
+            eye_color = tuple(int(F("eye_color")[i:i + 2], 16) / 255 for i in (1, 3, 5))
         self.eye_color = np.array(eye_color, float)
         self.bust = bust
         # 目・鼻・口の位置は頭の形の表（美少女モデル）から決める：目は表の目のくぼみ（瞳の中心の向き EYE_YAW）、
         # 鼻先は目の線〜あご先の 0.35、口は 0.66 だけ目の線より下（立ち絵の比率）。高さはあご先からの高さ（頭の肌の高さ比）
         hd = self.head
         # 目の中心は美少女モデルの瞳の向きより少し外（既製モデルのずんだもん・ミクは目と目の間が目 1 つ分近く空く）
-        p_eye = hd.surface(hd.eye_h, np.radians(_HS.EYE_YAW * 1.07))
+        p_eye = hd.surface(hd.eye_h, np.radians(_HS.EYE_YAW * F("eye_spread")))
         eye_yaw = float(np.arctan2(p_eye[0], hd.c[2] - p_eye[2]))
         self.eye = dict(yaw=eye_yaw, h=hd.eye_h, rx=0.0172, ry=0.0063, top=0.88, tilt=0.0, iris=0.70, iris_h=1.05, iris_y=-0.06, iris_in=0.05)
         self.eye.update(eye or {})
+        E = self.eye
+        E["rx"] *= F("eye_size")
+        E["ry"] *= F("eye_size") * F("eye_aspect")
+        E["tilt"] += F("eye_tilt")
+        E["iris"] *= F("iris_w")
+        E["iris_h"] *= F("iris_h")
+        E["iris_y"] += F("iris_y")
+        # 調整ページに今の値を見せるため、効いている値を残す
+        _face.EFFECTIVE = dict(eye_color="#" + "".join(f"{int(round(c * 255)):02x}" for c in self.eye_color), orig_eye_color=orig_eye)
         self.eye["pitch"] = self.head.pitch_at(self.eye["h"], self.eye["yaw"])
         self.mouth = dict(rx=0.0080, ry=0.0010, smile=1.0, open_bottom=1.0, h=hd.eye_h * (1 - 0.66),
                           nose_h=hd.eye_h * (1 - 0.35), fang=False)
@@ -941,6 +957,7 @@ class Character:
         E = self.eye
         M = self.mouth
         T = self.tex
+        F = _face.get
         is_closed_mouth = M["ry"] < 0.0022
         # 目や頬は陰影で灰色にならないよう、真っ白なトゥーンと環境色 1 で描いた色そのままにする
         noedge = dict(edge=False, shadow=False, shade=1.0, toon_tex=T.toon("toon_flat.png", (1, 1, 1)))
@@ -955,7 +972,7 @@ class Character:
         m.material("eye_white", "白目", (1, 1, 1), tex=T.eye_white(ext["eye_white"], k), **noedge)
         m.material("iris", "瞳", self.eye_color, tex=T.iris("iris.png", self.eye_color, ext["iris"], k), **noedge)
         # まつ毛は真っ黒にせず、瞳の色を混ぜた暗い紫寄りの色（既製の萌えキャラと同じ。黒と白目の強い差は怖く見える）
-        lash_c = _mix_c(self.eye_color * 0.45, (0.30, 0.20, 0.34), 0.6)
+        lash_c = np.clip(_mix_c(self.eye_color * 0.45, (0.30, 0.20, 0.34), 0.6) * F("lash_light"), 0, 1)
         m.material("lash", "まつ毛", lash_c, tex=T.lash(ext["lash"], k, color=lash_c), **noedge)
         # 眉は髪色そのままでなく、赤みのある焦げ茶に寄せる（既製モデルの眉の色）
         bc = brow_color if brow_color is not None else _mix_c(np.asarray(self.hair_color) * 0.60, (0.40, 0.20, 0.20), 0.5)
