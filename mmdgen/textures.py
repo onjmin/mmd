@@ -24,10 +24,10 @@ def _mix(a, b, t):
 # 下の縁は丸く回って目頭へ上がる。目頭は丸く、上の縁より低い所で閉じる。
 # 縦に長い目で外側の縁を斜めに長く取ると、白目も瞳もしずく形にゆがむので、外側は縦に短く丸めて下ろす。
 # 横:縦はおよそ 1.2:1（rx/ry と合わせて決める）。同じ点を 2 回置いた所は角として残る（_chaikin が角を丸めきらない）。
-EYE_CTRL = [(-0.95, 0.10), (-0.88, 0.52), (-0.66, 0.82), (-0.30, 0.96), (0.15, 0.99), (0.55, 0.94), (0.86, 0.80), (0.86, 0.80),
-            (0.93, 0.35), (0.92, -0.15), (0.82, -0.55), (0.60, -0.82), (0.25, -0.94), (-0.15, -0.96),
-            (-0.52, -0.92), (-0.78, -0.78), (-0.92, -0.42), (-0.95, 0.10)]
-EYE_CORNER = (0.86, 0.80)  # 目尻の上の角（まつ毛がいちばん太く、ハネが出る所）
+EYE_CTRL = [(-0.95, -0.12), (-0.86, 0.38), (-0.62, 0.74), (-0.28, 0.93), (0.12, 0.99), (0.50, 0.95), (0.80, 0.80), (0.93, 0.62),
+            (0.93, 0.62), (0.94, 0.20), (0.86, -0.22), (0.66, -0.56), (0.32, -0.72), (-0.08, -0.74),
+            (-0.48, -0.66), (-0.76, -0.50), (-0.92, -0.32), (-0.95, -0.12)]
+EYE_CORNER = (0.93, 0.62)  # 目尻の上の角（まつ毛がいちばん太く、ハネが出る所）
 
 
 def _chaikin(p, it=4):
@@ -139,8 +139,8 @@ class TextureSet:
         bot = np.where(inside.any(0), n - 1 - inside[::-1].argmax(0), 0)[None, :]
         px = (n - 1) / (ext[3] - ext[2])  # ry 1 つぶんの画素数
         depth, near_bot = (rows - top) / px, (bot - rows) / px
-        shade = np.clip(1 - depth / 0.80, 0, 1) ** 1.4
-        col = np.array([0.97, 0.97, 0.99]) * (1 - shade[..., None]) + np.array([0.78, 0.78, 0.88]) * shade[..., None]
+        shade = np.clip(1 - depth / 1.10, 0, 1) ** 1.2
+        col = np.array([0.95, 0.95, 0.98]) * (1 - shade[..., None]) + np.array([0.70, 0.71, 0.84]) * shade[..., None]
         edge = np.clip(1 - near_bot / 0.14, 0, 1) ** 2 * 0.35
         col = col * (1 - edge[..., None]) + np.array([0.70, 0.66, 0.70]) * edge[..., None]
         img = Image.fromarray((np.dstack([np.clip(col, 0, 1), m]) * 255).astype(np.uint8), "RGBA")
@@ -198,9 +198,9 @@ class TextureSet:
         return self.save(img.resize((256, 256), Image.LANCZOS), name)
 
     def lash(self, ext, k, name="lash.png", color=(0.05, 0.04, 0.05)):
-        """上まつ毛：白目の上の縁に沿う帯。太さは白目の高さの 2 割弱で、
+        """上まつ毛：白目の上の縁に沿う帯。太さは白目の高さの 3 割ほどで、
         目頭の少し上で細い鉤として始まり、上の縁で太く、目尻の角でいちばん太くなって外側の縁を下の方まで包んで細る。
-        目尻の角から外へ短いハネを 1 本。上に細い二重の線、下まぶたは目尻側の半分だけ淡い茶の線。"""
+        目尻の角から外へ短いハネを 1 本。上に細い二重の線、下まぶたは目尻から目の中ほどまで茶の線（ないと眼球がむき出しに見える）。"""
         n = 512 * S
         img = Image.new("RGBA", (n, n), (0, 0, 0, 0))
         d = ImageDraw.Draw(img)
@@ -211,7 +211,7 @@ class TextureSet:
         ic = int(np.argmin(np.linalg.norm(arc - EYE_CORNER, axis=1)))
         sc = s[ic]  # 目尻の角
         th = np.interp(s, [0.00, 0.06, 0.15, 0.32, sc - 0.08, sc, sc + (1 - sc) * 0.35, sc + (1 - sc) * 0.7, 1.00],
-                          [0.00, 0.10, 0.15, 0.18, 0.19, 0.23, 0.09, 0.04, 0.00])
+                          [0.00, 0.13, 0.20, 0.25, 0.27, 0.31, 0.12, 0.05, 0.00])  # イラストどおり太めに
         # 白目の縁に少しかぶせて隙間を出さない（両端は細く尖らせる）
         inner = _offset(arc, -0.06 * np.clip(th / 0.12, 0, 1), k)
         outer = _offset(arc, th, k)
@@ -241,11 +241,13 @@ class TextureSet:
 
         # 下まぶた：目尻側の下の縁に沿う淡い茶の線（目頭側は描かない）
         o = eye_outline()
-        lo = o[(o[:, 1] < -0.62) & (o[:, 0] > 0.0) & (o[:, 0] < 0.55)]
+        lo = o[(o[:, 1] < -0.15) & (o[:, 0] > -0.45) & (o[:, 0] < 0.93)]
         lo = lo[np.argsort(-lo[:, 0])]
-        w = np.sin(np.linspace(0, np.pi, len(lo))) ** 0.8
+        t = np.linspace(0, 1, len(lo))  # 0 が目尻、1 が目頭側の端
+        w = np.clip(t / 0.12, 0, 1) ** 0.6 * (1 - t) ** 0.9
+        lo = _offset(lo, np.full(len(lo), 0.03), k)  # 白目の縁のすぐ外
         for a, b, ww in zip(lo[:-1], lo[1:], w[:-1]):
-            d.line(to_px([tuple(a), tuple(b)]), fill=_rgb((0.46, 0.28, 0.26), int(185 * ww)), width=max(1, int(n * 0.011 * ww)))
+            d.line(to_px([tuple(a), tuple(b)]), fill=_rgb((0.30, 0.17, 0.16), int(255 * min(1, 0.3 + ww))), width=max(1, int(n * 0.016 * ww)))
         return self.save(img.resize((n // S, n // S), Image.LANCZOS), name)
 
     def brow(self, name, color):

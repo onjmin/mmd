@@ -218,6 +218,29 @@ _HS_PHI = np.radians(_HS.PHI)
 _HS_R = np.array(_HS.RHO, float)
 _HS_OK = np.isfinite(_HS_R)
 _HS_R0 = np.where(_HS_OK, _HS_R, 0.0)
+
+
+def _flatten_face(R0, ok, relief=0.45):
+    """顔の正面の凹凸（目のくぼみ・鼻・口元）を、大きくならした面へ relief の割合まで寄せる。
+    3D の萌え顔はリアルな凹凸を減らした平らな顔の方がかわいく見える（鼻を尖らせない）。あご先と輪郭は元のまま。"""
+    def gauss(T, axis, sigma, mode):
+        k = np.exp(-0.5 * (np.arange(-3 * sigma, 3 * sigma + 1) / sigma) ** 2)
+        k /= k.sum()
+        pad = [(0, 0), (0, 0)]
+        pad[axis] = (3 * sigma, 3 * sigma)
+        T = np.pad(T, pad, mode=mode)
+        return np.apply_along_axis(lambda c: np.convolve(c, k, "valid"), axis, T)
+    w = ok.astype(float)
+    num, den = R0 * w, w
+    for axis, sigma, mode in ((0, 6, "edge"), (1, 6, "reflect")):  # 高さ ±0.12、向き ±15 度ほど
+        num, den = gauss(num, axis, sigma, mode), gauss(den, axis, sigma, mode)
+    smooth = num / np.maximum(den, 1e-9)
+    V, P = np.meshgrid(_HS_V, np.degrees(_HS_PHI), indexing="ij")
+    mask = (1 - smoothstep(45, 75, P)) * smoothstep(-0.95, -0.75, V) * (1 - smoothstep(0.35, 0.6, V))
+    return np.where(ok, R0 + (smooth - R0) * (1 - relief) * mask, R0)
+
+
+_HS_R0 = _flatten_face(_HS_R0, _HS_OK)
 _HS_TOP = np.array([_HS_V[_HS_OK[:, j]].max() for j in range(len(_HS_PHI))])  # 向きごとの測れた上端
 _HS_RTOP = np.array([_HS_R[_HS_OK[:, j], j][-1] for j in range(len(_HS_PHI))])  # その高さでの半径
 HS_BOTTOM = float(_HS_V[0])  # 表の下端（首の付け根、目の線〜あご先 = 1 の単位）
@@ -268,14 +291,23 @@ EYE_DOME = 0.0022  # 目の板の真ん中のふくらみ（眼球のゆるい�
 EYE_LID = 0.0016   # 上まぶたの帯の盛り上がり
 
 
+# 萌えキャラの頭の比率（あご 0〜頭頂 1）：眉間 0.5、目尻 0.375、鼻先 0.25、口 0.125（頭頂〜あごの半分が眉間、眉間〜あごの半分が鼻先…）。
+# 頭蓋は大人より横に広く丸く、目から下の顔は短く、あごへ向かって細く小さくなる（赤ちゃんの頭蓋骨に近い）。
+HEAD_WIDTH = 0.47   # 横の大きさ（表の 1 が頭の高さの何倍か）。表の元の大人のモデルは 0.424
+HEAD_DEPTH = 0.43   # 前後の大きさ（同じく）
+JAW_X = 0.14        # 目の下からあごへ向かって横幅を細める割合（あごの下・首はこのぶん細い）
+JAW_Z = 0.07        # 同じく前後
+
+
 class Head:
-    """頭（肌の面）。既製の美少女モデルを一周輪切りにした表（_hs_lookup）だけで作る。
+    """頭（肌の面）。既製の美少女モデルを一周輪切りにした表（_hs_lookup）を、萌えキャラの比率に伸び縮みさせて作る。
     高さ h はあご先 0〜頭頂 1。あごの下から首の付け根（h < 0）まで作り、首の付け根は体の首の中に隠れる。
-    eye_h は目の線の高さで、表の「目の線〜あご先」をこの長さに合わせる（元のモデルは 0.424。立ち絵に合わせて少し低くする）。
+    eye_h は目の線の高さで、表の「目の線〜あご先」をこの長さに合わせる（元の大人のモデルは 0.424、萌えキャラは 0.375）。
+    横幅と奥行きは高さと別に HEAD_WIDTH・HEAD_DEPTH で決め、目から下は JAW_X・JAW_Z だけ細める。
     z は表の軸（目の高さで頭の前後の真ん中）の前後位置。元のモデルと同じく、首の中心より少し前に置く。
     r は髪の面を置くための大きさの目安（楕円体の半径）。"""
 
-    def __init__(self, chin_y=0.860, height=0.138, z=-0.0075, eye_h=0.40):
+    def __init__(self, chin_y=0.860, height=0.138, z=-0.0075, eye_h=0.375):
         self.H, self.y0, self.eye_h = height, chin_y, eye_h
         self.L = eye_h * height  # 目の線〜あご先
         self.zc = z
@@ -286,20 +318,33 @@ class Head:
         vs = np.linspace(-1.0, _HS.V_CROWN, 60)
         side = _hs_lookup(vs, np.pi / 2, _HS.V_CROWN).max()
         fb = (_hs_lookup(vs, 0.0, _HS.V_CROWN).max() + _hs_lookup(vs, np.pi, _HS.V_CROWN).max()) / 2
-        self.r = np.array([side * self.L, 0.50 * height, fb * self.L])
+        self.r = np.array([side * HEAD_WIDTH, 0.50, fb * HEAD_DEPTH]) * height
+
+    def _v(self, h):
+        """高さ h を表の高さ v（目の線 0、あご先 -1）に直す。目の線より上は、表の頭頂がこの頭の頭頂に来るよう伸び縮みさせる。"""
+        v = np.clip(h, self.h_min, 1) / self.eye_h - 1.0
+        return np.where(v > 0, v * (_HS.V_CROWN / self.vc), v)
+
+    def scales(self, h):
+        """高さ h での表の 1 あたりの横・前後の長さ。"""
+        t = smoothstep(-0.25, -1.0, self._v(h))
+        return HEAD_WIDTH * self.H * (1 - JAW_X * t), HEAD_DEPTH * self.H * (1 - JAW_Z * t)
+
+    def table_phi(self, h, x, z):
+        """点 (x, z) が表のどの向きにあるか（横・前後の伸び縮みを戻して測る）。"""
+        sx, sz = self.scales(h)
+        return np.arctan2(x / sx, (self.zc - z) / sz)
 
     def radius(self, h, phi):
-        """高さ h（あご 0〜頭頂 1）、正面から測った角 phi での断面の半径。
-        目の線より上は、表の頭頂がこの頭の頭頂（h = 1）に来るよう縦に伸び縮みさせる（目の線の高さを元のモデルから変えてもこぶが出ない）。"""
-        v = np.clip(h, self.h_min, 1) / self.eye_h - 1.0
-        v = np.where(v > 0, v * (_HS.V_CROWN / self.vc), v)
+        """高さ h（あご 0〜頭頂 1）、表の向き phi での断面の半径（表の値。横は scales の sx、前後は sz 倍して使う）。"""
         aphi = np.abs(np.arctan2(np.sin(phi), np.cos(phi)))
-        return _hs_lookup(v, aphi, _HS.V_CROWN) * self.L
+        return _hs_lookup(self._v(h), aphi, _HS.V_CROWN)
 
     def surface(self, h, phi):
         h_c = np.clip(h, self.h_min, 1)
         rho = self.radius(h_c, phi)
-        x, zf = rho * np.sin(phi), rho * np.cos(phi)
+        sx, sz = self.scales(h_c)
+        x, zf = rho * np.sin(phi) * sx, rho * np.cos(phi) * sz
         y = self.y0 + h_c * self.H
         p = np.stack(np.broadcast_arrays(x, y, self.zc - zf), -1)
         return self._carve(p)
@@ -336,8 +381,9 @@ class Head:
             t = (lo + hi) / 2
             p = self.c + d * t[..., None]
             h = (p[..., 1] - self.y0) / self.H
-            phi = np.arctan2(p[..., 0], self.zc - p[..., 2])
-            inside = (np.hypot(p[..., 0], p[..., 2] - self.zc) < self.radius(h, phi)) & (h <= 1) & (h >= self.h_min)
+            sx, sz = self.scales(h)
+            phi = np.arctan2(p[..., 0] / sx, (self.zc - p[..., 2]) / sz)
+            inside = (np.hypot(p[..., 0] / sx, (p[..., 2] - self.zc) / sz) < self.radius(h, phi)) & (h <= 1) & (h >= self.h_min)
             lo, hi = np.where(inside, t, lo), np.where(inside, hi, t)
         return self.c + d * ((lo + hi) / 2)[..., None]
 
@@ -366,12 +412,12 @@ class Head:
         h_q = np.clip((q[..., 1] - self.y0) / self.H, self.h_min, 1.0)
         line = q
         for _ in range(6):
-            phi_q = np.arctan2(line[..., 0], self.zc - line[..., 2])
+            phi_q = self.table_phi(h_q, line[..., 0], line[..., 2])
             p = self.surface(h_q, phi_q)
             # 面の点の、板の向きに沿った深さだけ線上を動かす（y は動かさない）
             t = (p - q) @ nrm
             line = q + t[..., None] * nrm
-        phi_q = np.arctan2(line[..., 0], self.zc - line[..., 2])
+        phi_q = self.table_phi(h_q, line[..., 0], line[..., 2])
         p = self.surface(h_q, phi_q)
         out = norm(np.stack([p[..., 0], (p[..., 1] - self.c[1]) * 0.25, p[..., 2] - self.zc], -1))
         return p + out * (off * 0.085)
@@ -887,10 +933,10 @@ class Character:
         # 3 層の板の範囲（A は rx 単位で目頭 - → 目尻 +、B は ry 単位で上 +）。テクスチャは同じ輪郭をこの範囲に描く
         k = E["rx"] / E["ry"]
         ext = {"eye_white": (-1.0, 1.0, -1.0, 1.0),
-               # 瞳は幅の 1.15 倍の縦長で、目の高さいっぱい。上はまつ毛、下は下の縁で切られる
+               # 瞳は幅の 1.05 倍の縦長で、目の高さいっぱい。上はまつ毛、下は下の縁で少し切られる
                # 中心を少し上げ、上まつ毛に軽くかかるようにする（白目が瞳を一周すると見開いた目に見える）
                "iris": (-E["iris_in"] - E["iris"], -E["iris_in"] + E["iris"],
-                        0.08 - 1.15 * E["iris"] * k, 0.08 + 1.15 * E["iris"] * k),
+                        0.10 - 1.05 * E["iris"] * k, 0.10 + 1.05 * E["iris"] * k),
                "lash": (-1.14, 1.45, -1.0, 1.85)}
         m.material("eye_white", "白目", (1, 1, 1), tex=T.eye_white(ext["eye_white"], k), **noedge)
         m.material("iris", "瞳", self.eye_color, tex=T.iris("iris.png", self.eye_color, ext["iris"], k), **noedge)
