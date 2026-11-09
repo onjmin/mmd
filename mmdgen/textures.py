@@ -27,7 +27,7 @@ def _mix(a, b, t):
 EYE_CTRL = [(-0.95, -0.12), (-0.86, 0.38), (-0.62, 0.74), (-0.28, 0.93), (0.12, 0.99), (0.50, 0.95), (0.80, 0.80), (0.93, 0.62),
             (0.93, 0.62), (0.94, 0.20), (0.86, -0.22), (0.66, -0.56), (0.32, -0.72), (-0.08, -0.74),
             (-0.48, -0.66), (-0.76, -0.50), (-0.92, -0.32), (-0.95, -0.12)]
-EYE_CORNER = (0.93, 0.62)  # 目尻の上の角（まつ毛がいちばん太く、ハネが出る所）
+EYE_CORNER = (0.93, 0.62)  # 目尻の上の角（まつ毛がいちばん太い所）
 
 
 def _chaikin(p, it=4):
@@ -139,68 +139,62 @@ class TextureSet:
         bot = np.where(inside.any(0), n - 1 - inside[::-1].argmax(0), 0)[None, :]
         px = (n - 1) / (ext[3] - ext[2])  # ry 1 つぶんの画素数
         depth, near_bot = (rows - top) / px, (bot - rows) / px
-        shade = np.clip(1 - depth / 1.10, 0, 1) ** 1.2
-        col = np.array([0.95, 0.95, 0.98]) * (1 - shade[..., None]) + np.array([0.70, 0.71, 0.84]) * shade[..., None]
-        edge = np.clip(1 - near_bot / 0.14, 0, 1) ** 2 * 0.35
+        shade = np.clip(1 - depth / 0.55, 0, 1) ** 1.5  # まつ毛の影はうっすら、上の縁の近くだけ
+        col = np.array([0.98, 0.97, 0.97]) * (1 - shade[..., None]) + np.array([0.82, 0.80, 0.86]) * shade[..., None]
+        edge = np.clip(1 - near_bot / 0.10, 0, 1) ** 2 * 0.20
         col = col * (1 - edge[..., None]) + np.array([0.70, 0.66, 0.70]) * edge[..., None]
         img = Image.fromarray((np.dstack([np.clip(col, 0, 1), m]) * 255).astype(np.uint8), "RGBA")
         return self.save(img.resize((256, 256), Image.LANCZOS), name)
 
     def iris(self, name, color, ext, k):
-        """瞳：縦長の楕円（板が縦長なので円で描けば縦長に貼られる）。
-        上 4 割はまぶたの影で濃く、下へ明るく抜ける。瞳孔・濃い外周・左上の大きな光と右下の小さな光。
+        """瞳：既製モデル（うか など）と同じ、色数の少ないベタ塗り。発光するようなグラデーションや筋は入れない。
+        太く濃い縁、上 4 割はまぶたの影で暗い色、下は元の色で、下の真ん中だけ少し明るい。大きめの濃い瞳孔。
+        光は左上の丸い白い点 1 つと、右下の小さな淡い点だけ。
         正面を向いたときの白目の輪郭で切り抜き、目頭の外の肌に瞳がはみ出さないようにする。"""
         n = 256 * S
         color = np.asarray(color, float)
+        gray = color.mean()
+        base = np.clip(color * 0.85 + gray * 0.15, 0, 1)            # 少しくすませる
+        dark = np.clip(base * 0.45, 0, 1)                            # まぶたの影
+        light = np.clip(base * 0.75 + 0.25, 0, 1)                    # 下の明るい所
+        rim_col = np.clip(base * 0.25, 0, 1)
+        pupil_col = np.clip(base * 0.18, 0, 1)
         y, x = np.mgrid[0:n, 0:n] / (n - 1)
-        dy = (y - 0.50) / 0.47
-        dx = (x - 0.50) / 0.47
+        dx, dy = (x - 0.50) / 0.47, (y - 0.50) / 0.47
         r = np.sqrt(dx * dx + dy * dy)
-        ang = np.arctan2(dy, dx)
 
-        top_shade = np.clip(color * 0.34 + 0.03, 0.0, 1.0)
-        mid_col = np.clip(color * 0.80 + 0.04, 0.0, 1.0)
-        bright_col = np.clip(color * 1.25 + 0.38, 0.0, 1.0)
-        rim_col = np.clip(color * 0.22 + np.array([0.02, 0.03, 0.10]), 0.0, 1.0)
-
-        # 上半分はまぶたの影で濃く（既製モデルの瞳は上 4〜5 割が暗く、下へ明るく抜ける）
-        t_upper = np.clip((y - 0.38) / 0.32, 0.0, 1.0)
-        t_upper = t_upper * t_upper * (3 - 2 * t_upper)
-        col = top_shade * (1 - t_upper[..., None]) + mid_col * t_upper[..., None]
-        # 下半分の三日月形の明るみ
-        crescent = np.clip((y - 0.50) / 0.30, 0.0, 1.0) * np.exp(-((r - 0.62) / 0.22) ** 2)
-        col = col * (1 - crescent[..., None]) + bright_col * crescent[..., None]
-        rays = (0.5 + 0.5 * np.cos(ang * 26.0)) * np.exp(-((r - 0.55) / 0.20) ** 2) * np.clip((y - 0.42) / 0.40, 0.0, 1.0)
-        col = np.clip(col + rays[..., None] * (bright_col - mid_col) * 0.20, 0.0, 1.0)
-
-        # 瞳孔（縦長）とまわりの淡い輪
-        pr = np.sqrt((dx / 0.19) ** 2 + ((dy + 0.02) / 0.25) ** 2)
-        halo = np.exp(-((pr - 1.25) / 0.30) ** 2) * np.clip((y - 0.38) / 0.40, 0.0, 1.0)
-        col = col * (1 - 0.30 * halo[..., None]) + bright_col * (0.30 * halo[..., None])
-        core = np.clip((1.0 - pr) * 14.0, 0.0, 1.0)[..., None]
-        col = col * (1 - 0.85 * core) + np.clip(color * 0.12 + 0.02, 0, 1) * (0.85 * core)
-
-        # 外周のくっきりした濃い縁
-        rim = np.clip((r - 0.90) * 30.0, 0.0, 1.0)[..., None]
-        col = col * (1 - rim) + rim_col * rim
+        def blend(col, c2, t):
+            t = np.clip(t, 0, 1)[..., None]
+            return col * (1 - t) + np.asarray(c2) * t
+        col = np.broadcast_to(base, (n, n, 3)).copy()
+        # 上の影：ゆるい弧で区切ったベタ（境目だけ少しぼかす）
+        shade_edge = 0.44 + 0.06 * dx ** 2
+        col = blend(col, dark, (shade_edge - y) / 0.02 + 0.5)
+        # 下の明るい所：瞳孔の下のやわらかい山形
+        glow = np.sqrt((dx / 0.45) ** 2 + ((dy - 0.55) / 0.40) ** 2)
+        col = blend(col, light, (1 - glow) / 0.10)
+        # 瞳孔（縦長）
+        pr = np.sqrt((dx / 0.26) ** 2 + ((dy + 0.04) / 0.36) ** 2)
+        col = blend(col, pupil_col, (1 - pr) / 0.04)
+        # 太い縁
+        col = blend(col, rim_col, (r - 0.84) / 0.03)
 
         alpha = np.clip((1.0 - r) * 40.0, 0.0, 1.0)
-        # 白目の輪郭で切り抜く（少しだけ広げて、まつ毛の下で途切れないように）
         out = _offset(eye_outline(), np.full(len(eye_outline()), 0.04), k)
         alpha = alpha * _mask(_to_px(ext, n)(out), n)
         img = Image.fromarray((np.clip(col, 0, 1) * 255).astype(np.uint8), "RGB")
         d = ImageDraw.Draw(img)
-        # 光：板の上部はまつ毛に隠れるので、見える高さに置く
-        d.ellipse([n * 0.20, n * 0.22, n * 0.44, n * 0.50], fill=(255, 255, 255))  # 大きな縦長の光
-        d.ellipse([n * 0.60, n * 0.66, n * 0.74, n * 0.78], fill=(250, 250, 250))
-        d.ellipse([n * 0.66, n * 0.35, n * 0.74, n * 0.41], fill=(235, 235, 235))
+        # 光：左上の丸い白い点 1 つ（まつ毛に隠れない高さ）と、右下の小さな淡い点
+        d.ellipse([n * 0.27, n * 0.30, n * 0.43, n * 0.44], fill=(255, 255, 255))
+        hi = tuple(int(v * 255) for v in np.clip(light * 0.5 + 0.5, 0, 1))
+        d.ellipse([n * 0.62, n * 0.68, n * 0.70, n * 0.75], fill=hi)
         img.putalpha(Image.fromarray((alpha * 255).astype(np.uint8)))
         return self.save(img.resize((256, 256), Image.LANCZOS), name)
 
     def lash(self, ext, k, name="lash.png", color=(0.05, 0.04, 0.05)):
-        """上まつ毛：白目の上の縁に沿う帯。太さは白目の高さの 3 割ほどで、
+        """上まつ毛：白目の上の縁に沿う帯。太さは白目の高さの 2 割弱で、
         目頭の少し上で細い鉤として始まり、上の縁で太く、目尻の角でいちばん太くなって外側の縁を下の方まで包んで細る。
-        目尻の角から外へ短いハネを 1 本。上に細い二重の線、下まぶたは目尻から目の中ほどまで茶の線（ないと眼球がむき出しに見える）。"""
+        目尻の外へのハネは付けない（顔の肌に根元が隠れて浮いた黒い点に見える）。上に細い二重の線、下まぶたは目尻から目の中ほどまで茶の線（ないと眼球がむき出しに見える）。"""
         n = 512 * S
         img = Image.new("RGBA", (n, n), (0, 0, 0, 0))
         d = ImageDraw.Draw(img)
@@ -211,7 +205,7 @@ class TextureSet:
         ic = int(np.argmin(np.linalg.norm(arc - EYE_CORNER, axis=1)))
         sc = s[ic]  # 目尻の角
         th = np.interp(s, [0.00, 0.06, 0.15, 0.32, sc - 0.08, sc, sc + (1 - sc) * 0.35, sc + (1 - sc) * 0.7, 1.00],
-                          [0.00, 0.13, 0.20, 0.25, 0.27, 0.31, 0.12, 0.05, 0.00])  # イラストどおり太めに
+                          [0.00, 0.08, 0.13, 0.16, 0.17, 0.20, 0.08, 0.03, 0.00])
         # 白目の縁に少しかぶせて隙間を出さない（両端は細く尖らせる）
         inner = _offset(arc, -0.06 * np.clip(th / 0.12, 0, 1), k)
         outer = _offset(arc, th, k)
@@ -223,15 +217,6 @@ class TextureSet:
         sel = (s > 0.03) & (s < 0.97)
         d.polygon(to_px([tuple(p) for p in core_o[sel][::-1]] + [tuple(p) for p in core_i[sel]]), fill=_rgb(color))
 
-        # 目尻のハネ：上の縁が外側へ下りはじめる角から、横へ細く尖らせる
-        i0, i1, im = (int(np.argmin(np.abs(s - t))) for t in (sc - 0.07, sc + 0.06, sc))
-        tip = outer[im] + np.array([0.13 / k, -0.03])  # 外へ短く、少し下向きに（長いと顔の肌に根元が隠れ、離れた黒い点に見える）
-        base0, base1 = outer[i0] - (outer[i0] - arc[i0]) * 0.3, outer[i1] - (outer[i1] - arc[i1]) * 0.3
-        q = np.linspace(0, 1, 12)[:, None]
-        up = (1 - q) ** 2 * base0 + 2 * q * (1 - q) * ((base0 + tip) / 2 + [0.0, 0.03]) + q ** 2 * tip
-        dn = (1 - q) ** 2 * tip + 2 * q * (1 - q) * ((tip + base1) / 2 + [-0.04, 0.0]) + q ** 2 * base1
-        d.polygon(to_px([tuple(p) for p in np.vstack([up, dn])]), fill=_rgb(color))
-
         # 二重の線：まつ毛の上、目頭寄りから目尻手前まで細く
         sel = (s > 0.22) & (s < sc - 0.03)
         crease = _offset(arc, th + 0.18, k)[sel]
@@ -241,13 +226,13 @@ class TextureSet:
 
         # 下まぶた：目尻側の下の縁に沿う淡い茶の線（目頭側は描かない）
         o = eye_outline()
-        lo = o[(o[:, 1] < -0.15) & (o[:, 0] > -0.45) & (o[:, 0] < 0.93)]
+        lo = o[(o[:, 1] < -0.15) & (o[:, 0] > -0.70) & (o[:, 0] < 0.93)]
         lo = lo[np.argsort(-lo[:, 0])]
         t = np.linspace(0, 1, len(lo))  # 0 が目尻、1 が目頭側の端
-        w = np.clip(t / 0.12, 0, 1) ** 0.6 * (1 - t) ** 0.9
-        lo = _offset(lo, np.full(len(lo), 0.03), k)  # 白目の縁のすぐ外
+        w = np.clip(t / 0.10, 0, 1) ** 0.6 * (1 - t) ** 0.7
+        lo = _offset(lo, np.full(len(lo), 0.02), k)  # 白目の縁のすぐ外
         for a, b, ww in zip(lo[:-1], lo[1:], w[:-1]):
-            d.line(to_px([tuple(a), tuple(b)]), fill=_rgb((0.30, 0.17, 0.16), int(255 * min(1, 0.3 + ww))), width=max(1, int(n * 0.016 * ww)))
+            d.line(to_px([tuple(a), tuple(b)]), fill=_rgb((0.55, 0.30, 0.24), int(255 * min(1, 0.35 + ww))), width=max(1, int(n * 0.010 * ww)))
         return self.save(img.resize((n // S, n // S), Image.LANCZOS), name)
 
     def brow(self, name, color):

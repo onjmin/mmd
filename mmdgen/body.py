@@ -502,7 +502,7 @@ class Character:
         # 鼻先は目の線〜あご先の 0.35、口は 0.66 だけ目の線より下（立ち絵の比率）。高さはあご先からの高さ（頭の肌の高さ比）
         hd = self.head
         # 目の中心は美少女モデルの瞳の向きより少し外（既製モデルのずんだもん・ミクは目と目の間が目 1 つ分近く空く）
-        p_eye = hd.surface(hd.eye_h, np.radians(_HS.EYE_YAW * 1.14))
+        p_eye = hd.surface(hd.eye_h, np.radians(_HS.EYE_YAW * 1.07))
         eye_yaw = float(np.arctan2(p_eye[0], hd.c[2] - p_eye[2]))
         self.eye = dict(yaw=eye_yaw, h=hd.eye_h, rx=0.0172, ry=0.0063, top=0.88, tilt=0.0, iris=0.56, iris_in=0.28)
         self.eye.update(eye or {})
