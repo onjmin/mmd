@@ -52,7 +52,7 @@ def build(out_dir):
     torso = c.skin_torso()
     # 肩ひも
     for jp, en, s in SIDES:
-        m.add("top", tube(strap(s * 0.046, 0.772), 0.0055, 0.003, n=8), torso)
+        m.add("top", tube(strap(c, s * 0.046, 0.772), 0.0055, 0.003, n=12), torso)
     for jp, en, s in SIDES:
         # 白いハイソックスと赤い靴
         m.add("shoe", parts.leg_tube(s, 0.060, 0.030, 1.20, steps=3), c.skin_leg(jp))
@@ -121,16 +121,25 @@ def hat(c):
             c.strand(path, w, 0.003, np.tile([0, 1.0, 0], (len(path), 1)), "feather", skin=m.skin_fixed("頭"))
 
 
-def strap(x, y0, off=0.0035):
-    """肩ひも：x の縦の断面で胴の表面に沿い、前の y0 から肩を越えて後ろの y0 まで回る。"""
-    ys = np.linspace(y0, 0.840, 60)
-    rx, rz, cz = parts.torso_r(ys)
-    ys, rz, cz, rx = ys[rx > abs(x) + 0.004], rz[rx > abs(x) + 0.004], cz[rx > abs(x) + 0.004], rx[rx > abs(x) + 0.004]
-    d = rz * np.sqrt(1 - (x / rx) ** 2) + off
-    top = [[x, ys[-1] + 0.6 * d[-1], cz[-1]]]
-    front = [[x, y, c - dd] for y, c, dd in zip(ys, cz, d)]
-    back = [[x, y, c + dd] for y, c, dd in zip(ys, cz, d)][::-1]
-    return catmull(front[::4] + top + back[::4], 6)
+def strap(c, x, y0, off=0.0035):
+    """肩ひも：x の縦の断面で胴の肌の面（胸のふくらみ込み）に沿い、前の y0 から肩を越えて後ろの y0 まで回る。"""
+    angs = np.linspace(-np.pi, np.pi, 1441)
+    front, back, y_top = [], [], None
+    for y in np.linspace(y0, 0.845, 120):
+        P = c.torso_ring_point(y, angs)
+        if np.abs(P[:, 0]).max() < abs(x) + 0.002:  # ここより上は肩の面が x まで届かない
+            break
+        y_top = y
+        for side, out in ((P[:, 2] < np.median(P[:, 2]), front), (P[:, 2] >= np.median(P[:, 2]), back)):
+            Q = P[side & (np.sign(P[:, 0]) == np.sign(x))]
+            k = np.argmin(np.abs(Q[:, 0] - x))
+            q = Q[k]
+            cz = parts.torso_r(y)[2]
+            nrm = np.array([0.0, 0.0, q[2] - cz])
+            out.append([x, y, q[2] + np.sign(nrm[2]) * off])
+    front, back = np.array(front), np.array(back)
+    top = [x, y_top + 0.004, (front[-1][2] + back[-1][2]) / 2]
+    return catmull(np.vstack([front[::3], [top], back[::-3]]), 120)
 
 
 def chest_mark(pos, y, w, h, off=0.004):

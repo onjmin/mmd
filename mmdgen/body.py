@@ -83,6 +83,10 @@ ARM = [  # 腕からの距離, 半径
     (0.278, 0.0092),
 ]
 
+# 腕の太さも折れ目が出ないよう滑らかに補間する
+_ARM_DENSE = catmull(np.array(ARM, float), 60)
+_ARM_T, _ARM_R = _ARM_DENSE[np.argsort(_ARM_DENSE[:, 0]), 0], _ARM_DENSE[np.argsort(_ARM_DENSE[:, 0]), 1]
+
 # 手首座標系 (d: 腕の向き, up: 手の甲側, bk: +Z 小指側) での各指の関節位置 (u, v, z) と太さ (rv, rz)
 FINGER_SPECS = [
     ("親指", "thumb", "０１２", [
@@ -776,9 +780,10 @@ class Character:
         # 胴体（胸・谷間・くびれ・へそを一体成形した滑らかな高密度メッシュ：楕円体の継ぎ目溝や2重メッシュの突き抜けが一切出ない）
         chest_ys = np.linspace(0.660, 0.780, 36)
         navel_ys = np.linspace(0.594, 0.618, 9)
-        extra_keys = list(chest_ys) + list(navel_ys) + [b[0] for b in torso_bands]
+        shoulder_ys = np.linspace(0.760, 0.840, 41)  # 首の付け根〜肩先の丸みを細かく刻む
+        extra_keys = list(chest_ys) + list(navel_ys) + list(shoulder_ys) + [b[0] for b in torso_bands]
         ys = _samples([t[0] for t in TORSO], extra_keys, 60)
-        n_ang = 84
+        n_ang = 160
         angs = np.arange(n_ang) / n_ang * TAU
         rings, centers = [], []
         for y in ys:
@@ -822,18 +827,18 @@ class Character:
             d = arm_dir(s)
             u = np.array([0, 0, 1.0])
             v = np.array([s * np.sin(ARM_ANGLE), np.cos(ARM_ANGLE), 0])
-            ts = _samples([a[0] for a in ARM], [b[0] for b in arm_bands], 24, descending=False)
+            ts = _samples([a[0] for a in ARM], [b[0] for b in arm_bands], 60, descending=False)
             rings, centers = [], []
             for t in ts:
-                r = np.interp(t, [a[0] for a in ARM], [a[1] for a in ARM])
+                r = np.interp(t, _ARM_T, _ARM_R)
                 c = j["腕"] + d * t
-                rings.append(ring(c, u, v, r, r, 20))
+                rings.append(ring(c, u, v, r, r, 48))
                 centers.append(c)
             self._banded(rings, centers, ts, arm_bands, self.skin_arm(jp), cap0=True, cap1=True, descending=False)
             sh_mat = _band_at(arm_bands, 0.0, descending=False)
             # 肩の丸み（三角筋）：腕の向きに長い楕円体にして、玉ではなく腕へ流れる形にする
             m.add(sh_mat, ellipsoid(j["腕"] + d * 0.004 + np.array([-s * 0.004, 0.001, 0]), [0.024, 0.019, 0.020],
-                                    rot_axes(d, v, np.cross(d, v)), nu=18, nv=10),
+                                    rot_axes(d, v, np.cross(d, v)), nu=48, nv=28),
                   m.skin_auto(["上半身2", jp + "肩", jp + "腕"], {"上半身2": 1.2}))
             self.add_hand(jp, s, hand_mat)
 
