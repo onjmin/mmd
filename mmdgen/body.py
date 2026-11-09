@@ -342,10 +342,10 @@ def _eye_radius(a, b):
 
 
 # 目の板：顔の面から奥へ下げる量・板の向き（目の向きの何割外を向くか）・板の裏で肌を下げる量
-EYE_INSET = 0.0012
-EYE_TURN = 0.40
+EYE_INSET = 0.0006
+EYE_TURN = 0.85
 EYE_SOCKET_DEPTH = 0.0006
-EYE_DOME = 0.0010  # 目の板の真ん中のふくらみ（眼球のゆるい丸み）
+EYE_DOME = 0.0022  # 目の板の真ん中のふくらみ（眼球のゆるい丸み）
 EYE_LID = 0.0016   # 上まぶたの帯の盛り上がり
 
 
@@ -384,19 +384,32 @@ class Head:
         n = np.where(cp > 0, n_front, 2.0)
         rho = (np.abs(sp / w) ** n + np.abs(cp / d) ** n) ** (-1 / n)
         t, wt = _hs_lookup(v, aphi, vc)
+        # 鼻のふくらみは表の外（表がない頭）用。あごの下（表から元の断面へ切り替わる所）に付くと真ん中に筋が立ち、ケツあごになる
+        nose = nose * smoothstep(-1.0, -0.85, v)
         rho = rho + nose * np.exp(-((rho * sp) / (0.044 * self.H)) ** 2) * np.clip(cp, 0, 1) ** 2.0 * (1 - wt)
         return np.maximum(rho + (t * self.L - rho) * wt, 0.0)
 
     def surface(self, h, phi):
         h_c = np.clip(h, 0, 1)
         rho = self.radius(h_c, phi)
+        x, zf = rho * np.sin(phi), rho * np.cos(phi)
+        # あご先より下の断面は表から元の断面へ切り替わる所で、あご先から奥へ細い尾根のようにとがる
+        # （下から見るとあごの下が割れたケツあご）。あご先の少し上の断面を、横は細めつつ前後はあご先に合わせて縮めて使う
+        hb = 0.03
+        if np.any(h_c < hb):
+            rb = self.radius(np.full_like(np.asarray(phi, float), hb), phi)
+            f_tip = self.radius(h_c, 0.0) / self.radius(hb, 0.0)
+            u = np.clip(h_c / hb, 0, 1)
+            k = (1 - smoothstep(0.6, 1.0, u)) * smoothstep(0.0, 0.3, np.cos(phi))
+            x = x + (rb * np.sin(phi) * (0.55 + 0.45 * u) - x) * k
+            zf = zf + (rb * np.cos(phi) * f_tip - zf) * k
         # あごの下は、あご先から耳の下・うなじへ向かって斜めに上がる（美少女モデルの横顔）。真正面のあご先だけは下げたまま
         # あご先の横（正面から 20 度）から上げはじめ、耳の下で目の線〜あご先の 3 割ほど上がる。
         # 上げる幅はあごの下だけ（h < 0.18）にして、頬の輪郭は表のまま残す
-        jaw_back = smoothstep(0.94, 0.30, np.cos(phi))
+        jaw_back = smoothstep(1.0, 0.30, np.cos(phi))
         jaw_lift = 0.09 * (1.0 - smoothstep(0.0, 0.26, h_c)) * jaw_back
         y = self.y0 + (h_c + jaw_lift) * self.H
-        p = np.stack([rho * np.sin(phi), y, self.zc - rho * np.cos(phi)], -1)
+        p = np.stack(np.broadcast_arrays(x, y, self.zc - zf), -1)
         return self._carve(p)
 
     def add_socket(self, p0, n, e1, rx, ry, depth, rim=1.30, lid=0.0):
@@ -584,7 +597,13 @@ class Character:
         pdir = Head.dir(s * E["yaw"] * EYE_TURN, E["pitch"] * 0.75)
         n = norm(np.array([pdir[0], 0.0, pdir[2]]))
         e1 = norm(np.cross(n, UP))
-        p0 = self.head.point(d0) - n * EYE_INSET
+        p0 = self.head.point(d0)
+        # 目の中心の肌は表のくぼみで奥にあるので、板の高さは目のまわり（輪郭の少し外）の肌の平均にそろえる。
+        # 中心の肌に合わせると目全体が穴の底に沈んで見える
+        t = np.linspace(0, 2 * np.pi, 24, endpoint=False)
+        ring = p0 + 1.15 * (np.cos(t)[:, None] * E["rx"] * e1 + np.sin(t)[:, None] * E["ry"] * UP)
+        rim = self.head.point(ring - self.head.c)
+        p0 = p0 + n * (float(np.mean((rim - p0) @ n)) - EYE_INSET)
         return p0, n, e1
 
     def _rig(self):
