@@ -318,8 +318,10 @@ class Head:
         h_c = np.clip(h, 0, 1)
         rho = self.radius(h_c, phi)
         # あごの下は、あご先から耳の下・うなじへ向かって斜めに上がる（美少女モデルの横顔）。真正面のあご先だけは下げたまま
-        jaw_back = np.clip((0.97 - np.cos(phi)) / 1.97, 0.0, 1.0) ** 0.9
-        jaw_lift = 0.10 * (1.0 - smoothstep(0.0, 0.30, h_c)) * jaw_back
+        # あご先の横（正面から 20 度）から上げはじめ、耳の下で目の線〜あご先の 3 割ほど上がる。
+        # 上げる幅はあごの下だけ（h < 0.18）にして、頬の輪郭は表のまま残す
+        jaw_back = smoothstep(0.94, 0.30, np.cos(phi))
+        jaw_lift = 0.10 * (1.0 - smoothstep(0.0, 0.18, h_c)) * jaw_back
         y = self.y0 + (h_c + jaw_lift) * self.H
         return np.stack([rho * np.sin(phi), y, self.zc - rho * np.cos(phi)], -1)
 
@@ -838,8 +840,9 @@ class Character:
         # 3 層の板の範囲（A は rx 単位で目頭 - → 目尻 +、B は ry 単位で上 +）。テクスチャは同じ輪郭をこの範囲に描く
         k = E["rx"] / E["ry"]
         ext = {"eye_white": (-1.0, 1.0, -1.0, 1.0),
-               # 瞳は縦長で白目より背が高く、上はまつ毛、下は下の縁で切られる
-               "iris": (-E["iris_in"] - E["iris"], -E["iris_in"] + E["iris"], -1.10, 1.90),
+               # 瞳は幅の 1.15 倍の縦長で、目の高さいっぱい。上はまつ毛、下は下の縁で切られる
+               "iris": (-E["iris_in"] - E["iris"], -E["iris_in"] + E["iris"],
+                        -0.02 - 1.15 * E["iris"] * k, -0.02 + 1.15 * E["iris"] * k),
                "lash": (-1.14, 1.45, -1.0, 1.85)}
         m.material("eye_white", "白目", (1, 1, 1), tex=T.eye_white(ext["eye_white"], k), **noedge)
         m.material("iris", "瞳", self.eye_color, tex=T.iris("iris.png", self.eye_color, ext["iris"], k), **noedge)
@@ -912,10 +915,10 @@ class Character:
                 m.add_morph_part("まばたき", base, blink)
                 m.add_morph_part("笑い", base, h.decal(d0, remap_ab(rows, closer(0.28, **shut)), off, closed=False, plane_dir=pdir)[0])
                 m.add_morph_part("ウィンク" if s > 0 else "ウィンク右", base, blink)
-            # 眉は目のすぐ上（目の高さの半分ほど上）、目頭側から目の真ん中あたりまで
-            bd = Head.dir(s * E["yaw"], E["pitch"] + 0.21)
-            bpdir = Head.dir(s * E["yaw"] * 0.38, E["pitch"] + 0.18)
-            brow_rows = plane(rx * 0.62, -0.0040, 0.0040, s, cx=-s * 0.30 * rx)
+            # 眉は目の上に少し離して（美少女モデルの眉の高さ）、目頭の上から目尻の少し手前まで長くかける
+            bd = Head.dir(s * E["yaw"], E["pitch"] + 0.37)
+            bpdir = Head.dir(s * E["yaw"] * 0.38, E["pitch"] + 0.31)
+            brow_rows = plane(rx * 0.92, -0.0040, 0.0040, s, cx=-s * 0.02 * rx)
             b_base = m.add("brow", h.decal(bd, brow_rows, 0.0085, closed=False, plane_dir=bpdir), m.skin_fixed("頭"))
             # 眉の表情モーフ（にこり・怒り・困る・まばたき・笑い）
             m.add_morph_part("笑い", b_base, h.decal(bd, remap_ab(brow_rows, lambda r: r + [0, -0.0025]), 0.0085, closed=False, plane_dir=bpdir)[0])
@@ -927,7 +930,7 @@ class Character:
                 bh = E["h"] - 0.12
                 cd = Head.dir(s * 0.52, self.head.pitch_at(bh, 0.52))
                 cpdir = Head.dir(s * 0.30, self.head.pitch_at(bh, 0.30))
-                m.add("blush", h.decal(cd, plane(0.0210, -0.0095, 0.0095, s, cols=25, rows=19), 0.0020, closed=False, plane_dir=cpdir),
+                m.add("blush", h.decal(cd, plane(0.0180, -0.0085, 0.0085, s, cols=25, rows=19), 0.0020, closed=False, plane_dir=cpdir),
                       m.skin_fixed("頭"))
 
         # 鼻：鼻先の淡いピンクの点

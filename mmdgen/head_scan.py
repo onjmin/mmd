@@ -21,6 +21,7 @@ OUT = Path(__file__).resolve().parent / "head_shape.py"
 # 表の目盛り：高さ（目の線〜あご先 = 1、上が +）と、正面から測った角（度）
 SCAN_V = np.round(np.arange(-1.10, 1.46, 0.05), 2)
 SCAN_PHI = np.arange(0, 96, 5)
+SOCKET = 0.35  # 目の穴を白目の奥へ下げる割合（0 で肌どうしを平らにつなぐ、1 で白目の板そのまま）
 
 
 def _hits(tri, org, dirs):
@@ -51,35 +52,57 @@ def scan():
     front = face[np.abs(face[:, 0]) < 0.05]
     chin_y = front[front[:, 2] < np.percentile(front[:, 2], 60), 1].min()
     L = eye_y - chin_y
-    # 顔の肌・鼻・白目の三角形（顔の肌は目の所が穴なので、白目の板で埋める）
-    start, tris = 0, []
+    # 顔の肌・鼻の三角形と、白目の三角形（顔の肌は目の所が穴）
+    start, tris, whites = 0, [], []
     for m in info["materials"]:
         idx = info["indices"][start:start + m["faces"] * 3].reshape(-1, 3)
         start += m["faces"] * 3
-        if m["name"] in ("material_face", "material_nose", "material_eyewhites"):
+        if m["name"] in ("material_face", "material_nose"):
             tris.append(info["positions"][idx])
-    tris = np.vstack(tris)
+        elif m["name"] == "material_eyewhites":
+            whites.append(info["positions"][idx])
+    tris, whites = np.vstack(tris), np.vstack(whites)
     # 中心軸：目の高さで顔がいちばん横に広い所の奥行き（耳は除く）。ここで測った 90 度の値がそのまま頭の横幅になる
     band = face[(np.abs(face[:, 1] - eye_y) < 0.03 * L) & (face[:, 2] < np.percentile(face[:, 2], 70))]
     zc = band[np.argmax(np.abs(band[:, 0])), 2]
     iris = np.vstack([mv["material_eyer"], mv["material_eyel"]])
     iris = iris[iris[:, 0] > 0]
     eye_yaw = float(np.degrees(np.arctan2(iris[:, 0].mean(), zc - iris[:, 2].mean())))
-    table = np.full((len(SCAN_V), len(SCAN_PHI)), np.nan)
-    for i, v in enumerate(SCAN_V):
-        y = eye_y + v * L
-        near = tris[(tris[:, :, 1].min(1) <= y + 1e-6) & (tris[:, :, 1].max(1) >= y - 1e-6)]
-        if not len(near):
-            continue
-        for j, ph in enumerate(SCAN_PHI):
-            r = []
-            for sg in (1, -1):
-                a = np.radians(ph) * sg
-                d = np.array([np.sin(a), 0.0, -np.cos(a)])
-                r.append(_hits(near, np.array([[0.0, y, zc]]), d[None, :])[0])
-            r = [x for x in r if np.isfinite(x)]
-            if r:
-                table[i, j] = np.mean(r) / L
+    def measure(T):
+        table = np.full((len(SCAN_V), len(SCAN_PHI)), np.nan)
+        for i, v in enumerate(SCAN_V):
+            y = eye_y + v * L
+            near = T[(T[:, :, 1].min(1) <= y + 1e-6) & (T[:, :, 1].max(1) >= y - 1e-6)]
+            if not len(near):
+                continue
+            for j, ph in enumerate(SCAN_PHI):
+                r = []
+                for sg in (1, -1):
+                    a = np.radians(ph) * sg
+                    d = np.array([np.sin(a), 0.0, -np.cos(a)])
+                    r.append(_hits(near, np.array([[0.0, y, zc]]), d[None, :])[0])
+                r = [x for x in r if np.isfinite(x)]
+                if r:
+                    table[i, j] = np.mean(r) / L
+        return table
+    table, white = measure(tris), measure(whites)
+    # 目の穴は、まわりの肌を向きにそってつないだ面から、白目の奥へ少しだけ下げる。
+    # 白目の板そのままだと深い穴になり、斜め・横から見たとき目の所が大きくへこんで見える
+    for i in range(len(SCAN_V)):
+        row, ok = table[i], np.isfinite(table[i])
+        hole = ~ok & np.isfinite(white[i])
+        if hole.any() and ok.sum() >= 2:
+            fill = np.interp(SCAN_PHI, SCAN_PHI[ok], row[ok])
+            row[hole] = fill[hole] - SOCKET * np.clip(fill[hole] - white[i][hole], 0, None)
+    # 肌の三角形の縁や細かな段で面がでこぼこしないよう、測れた所だけで軽くならす
+    ok = np.isfinite(table)
+    t0 = np.where(ok, table, 0.0)
+    k = np.array([0.25, 0.5, 0.25])
+    def blur(T):
+        T = np.apply_along_axis(lambda c: np.convolve(np.pad(c, 1, mode="edge"), k, "valid"), 0, T)
+        return np.apply_along_axis(lambda c: np.convolve(np.pad(c, 1, mode="edge"), k, "valid"), 1, T)
+    sm = blur(t0) / np.maximum(blur(ok.astype(float)), 1e-9)
+    table = np.where(ok, sm, np.nan)
     return table, eye_yaw
 
 
