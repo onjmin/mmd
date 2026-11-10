@@ -6,6 +6,7 @@ from . import head_shape as _HS
 from .textures import eye_outline
 from . import pmx
 from . import face as _face
+from . import bake as _bake
 from .builder import _merge_seams
 from .geom import (UP, MeshData, catmull, ellipsoid, loft, norm, ring, rot_axes, smoothstep, tube, vertex_normals, TAU)
 
@@ -59,17 +60,19 @@ def torso_profile(y, grow=1.0):
     return rx, rz, cz
 
 LEG = [  # y, 半径, x, z
-    (0.565, 0.046, 0.040, 0.004),
-    (0.525, 0.061, 0.049, 0.004),
-    (0.450, 0.055, 0.049, 0.000),
-    (0.370, 0.044, 0.047, -0.002),
-    (0.300, 0.033, 0.046, -0.004),
-    (0.270, 0.032, 0.046, -0.003),
-    (0.220, 0.035, 0.046, 0.004),
-    (0.170, 0.032, 0.045, 0.006),
-    (0.120, 0.025, 0.044, 0.006),
-    (0.070, 0.020, 0.044, 0.006),
-    (0.040, 0.019, 0.044, 0.006),
+    # 既製の MMD モデル（音街ウナ）の脚は太ももで脚の長さの 0.065〜0.08、ひざ・ふくらはぎで 0.055〜0.06。
+    # それより少しだけ肉付きを残して細くする
+    (0.565, 0.044, 0.040, 0.004),
+    (0.525, 0.053, 0.047, 0.004),
+    (0.450, 0.047, 0.047, 0.000),
+    (0.370, 0.0385, 0.046, -0.002),
+    (0.300, 0.0305, 0.045, -0.004),
+    (0.270, 0.0295, 0.045, -0.003),
+    (0.220, 0.0318, 0.045, 0.004),
+    (0.170, 0.0285, 0.044, 0.006),
+    (0.120, 0.0225, 0.044, 0.006),
+    (0.070, 0.0185, 0.044, 0.006),
+    (0.040, 0.0180, 0.044, 0.006),
 ]
 
 ARM = [  # 腕からの距離, 半径
@@ -514,6 +517,7 @@ class Character:
     def __init__(self, model, skin_color, eye_color, bust=1.0, eye=None, mouth=None, tex=None, hair_color=(0.2, 0.2, 0.2)):
         self.m = model
         self.tex = tex
+        model.tex_set = tex
         self.hair_color = hair_color
         # 顔の調整値（mmdgen/face.py。調整ページで人が決めてキャラごとの json に保存したもの）
         F = _face.get
@@ -554,7 +558,9 @@ class Character:
             hd.add_socket(p0, n, e1, self.eye["rx"] * 1.04, self.eye["ry"] * 1.04, EYE_SOCKET_DEPTH, lid=EYE_LID)
         m = model
         m.default_toon_tex = tex.toon("toon_cloth.png", (0.82, 0.80, 0.89))
-        m.material("skin", "肌", skin_color, toon_tex=tex.toon("toon_skin.png", (1.0, 0.85, 0.80)))
+        # 肌の影は灰色に濁らせず、赤みのある暖色にする
+        skin_shadow = np.clip(np.asarray(skin_color, float) * np.array([0.97, 0.80, 0.77]), 0, 1)
+        m.material("skin", "肌", skin_color, toon_tex=tex.toon("toon_skin.png", (1.0, 0.85, 0.80)), shadow_color=skin_shadow)
         m.material("ear_in", "耳の内側", np.asarray(skin_color) * np.array([0.88, 0.72, 0.70]),
                    toon_tex=tex.toon("toon_skin.png", (1.0, 0.85, 0.80)), edge=False)
         self._rig()
@@ -1163,7 +1169,7 @@ class Character:
         """筋の入った髪テクスチャと、上寄りに光の輪が出るスフィアを付けた材質。"""
         T = self.tex
         return self.m.material(key, name, color, tex=T.hair(f"hair_{key}.png", color, tip),
-                               sphere=T.hair_sphere(), sphere_mode=2)
+                               sphere=T.hair_sphere(), sphere_mode=2, bake="v", edge_size=0.8)
 
     def hair_surface(self, scale=(1.06, 1.04, 1.07), lift=(0, 0.002, 0.006)):
         return self.head.c + np.array(lift), self.head.r * np.array(scale)
@@ -1176,8 +1182,10 @@ class Character:
                 return ~face & (d[:, 1] > -0.40)
         self.m.add(mat, ellipsoid(c, r, nu=36, nv=22, keep=keep), self.m.skin_fixed("頭"))
 
-    def strand(self, path, widths, thick, sides, mats, blunt=False, skin=None):
-        """髪の束。頭頂〜額はしっかり厚みを保って肌を覆い、毛先近くで薄く絞る。"""
+    def strand(self, path, widths, thick, sides, mats, blunt=False, skin=None, wrap=None):
+        """髪の束。頭頂〜額はしっかり厚みを保って肌を覆い、毛先近くで薄く絞る。
+        wrap に頭の中心を渡すと、束の幅を平らな板にせず、その縦軸のまわりに巻いて頭や首の丸みに沿わせる
+        （幅の広い束を板のまま並べると、頭のまわりが角ばって段になる）。"""
         skin = skin or self.skin_hair()
         path = np.asarray(path, float)
         n = len(path)
@@ -1189,10 +1197,24 @@ class Character:
         sides = norm(np.asarray(sides, float) - np.einsum("ij,ij->i", np.asarray(sides, float), tg)[:, None] * tg)
         nn = norm(np.cross(tg, sides))
         # 断面は外側がふくらんだ三日月型にする（nn は頭の内側を向く）
-        a = np.arange(12) / 12 * TAU
+        seg = 12 if wrap is None else 24
+        a = np.arange(seg) / seg * TAU
         ca, sa = np.cos(a), np.sin(a)
-        rings = [path[i] + np.outer(ca * widths[i], sides[i])
-                 + np.outer(sa * thick_arr[i] - 1.3 * thick_arr[i] * (1 - ca ** 2), nn[i]) for i in range(n)]
+        if wrap is None:
+            rings = [path[i] + np.outer(ca * widths[i], sides[i])
+                     + np.outer(sa * thick_arr[i] - 1.3 * thick_arr[i] * (1 - ca ** 2), nn[i]) for i in range(n)]
+        else:
+            rings = []
+            for i in range(n):
+                dx, dz = path[i][0] - wrap[0], path[i][2] - wrap[2]
+                rho = max(np.hypot(dx, dz), 1e-6)
+                th = np.arctan2(dx, -dz)
+                sgn = 1.0 if sides[i] @ np.array([np.cos(th), 0.0, np.sin(th)]) >= 0 else -1.0
+                q = sa * thick_arr[i] - 1.3 * thick_arr[i] * (1 - ca ** 2)  # 内向きの厚み
+                ang = th + sgn * np.clip(ca * widths[i] / rho, -0.75, 0.75)
+                rad = rho + q * (nn[i] @ np.array([np.sin(th), 0.0, -np.cos(th)]))
+                rings.append(np.stack([wrap[0] + rad * np.sin(ang), path[i][1] + q * nn[i][1],
+                                       wrap[2] - rad * np.cos(ang)], 1))
         if isinstance(mats, str):
             mats = [mats] * n
         start = 0
@@ -1253,7 +1275,7 @@ class Character:
         w = w * (0.75 + 0.25 * smoothstep(0.0, 0.25, tt))
         sides = np.tile([np.cos(theta), 0.0, np.sin(theta)], (n, 1))
         mats = [mats_fn(p) for p in path] if mats_fn else mat
-        self.strand(path, w, thick, sides, mats, blunt=not pointy,
+        self.strand(path, w, thick, sides, mats, blunt=not pointy, wrap=c,
                     skin=self.hair_chain(path, c[1] - 0.03, bones, width * 0.6) if bones else None)
 
     def hair_chain(self, path, y_from, bones, radius, parent="頭"):
@@ -1288,8 +1310,10 @@ def _band_at(bands, key, descending=True):
 
 
 def finish(model):
-    """表示枠を整える。"""
+    """塗りを焼き込み、表示枠を整える。"""
     m = model
+    if m.tex_set is not None:
+        _bake.bake(m, face_y=0.862)
     B = m.bone
     m.frames.append(("Root", "Root", 1, [(0, B["全ての親"])]))
     m.frames.append(("表情", "Exp", 1, [(1, i) for i in range(len(m.morphs))]))

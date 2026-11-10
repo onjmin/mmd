@@ -96,9 +96,9 @@ function updateOutline() {
     if (!p) return;
     if (p.baseVisible === undefined) p.baseVisible = p.visible;
     p.visible = on && p.baseVisible;
-    p.color = [0, 0, 0];
-    p.alpha = 1.0;
-    p.thickness = w * 0.0012;
+    // 線の色と太さはモデルの材質の値を使う（太さはスライダーで全体を掛ける。3.3 が等倍）
+    if (p.baseThickness === undefined) p.baseThickness = p.thickness;
+    p.thickness = p.baseThickness * w / 3.3;
   });
 }
 document.getElementById("outline").onchange = updateOutline;
@@ -121,7 +121,7 @@ function load(name) {
   physics = null;
   const manager = new THREE.LoadingManager();
   manager.setURLModifier((url) => url.startsWith("data:") || url.startsWith("blob:") ? url : `${url}${url.includes("?") ? "&" : "?"}v=${CACHE_BUST}`);
-  new MMDLoader(manager).load(`../models/${name}/${name}.pmx`, async (m) => {
+  new MMDLoader(manager).load(`../models/${name}/${Q.get("pmx") || name}.pmx`, async (m) => {
     mesh = m;
     // MMD 本体のテクスチャ付き材質は「テクスチャ × saturate(環境色 + 拡散色 × 光)」。
     // three.js は環境色をテクスチャの外に足す（MMDLoader は 0.2 倍で逃げる）ので、拡散色に寄せて同じ明るさにする

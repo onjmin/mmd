@@ -136,7 +136,7 @@ async function open(k) {
       mesh = m;
       m.material.forEach((mt) => {  // ビューアと同じ明るさの合わせ方
         if (mt.name === "ヘッドセット") mt.visible = false;  // 顔にかかる小物は隠す
-        const p = mt.userData.outlineParameters; if (p) { p.thickness = 0.0022; p.color = [0, 0, 0]; }
+        const p = mt.userData.outlineParameters; if (p) p.thickness *= 0.55;
         if (!mt.map) return;
         const amb = mt.emissive.clone().multiplyScalar(5);
         const c = mt.color.clone().multiplyScalar(LIGHT).add(amb);

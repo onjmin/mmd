@@ -49,7 +49,7 @@ def fur(path, r, closed=False, seed=0, n=18, rv=None, side=None):
         taper = 0.55 + 0.45 * np.clip(np.minimum(t, t[-1] - t) / (r * 2.0), 0, 1)  # 端は細めて丸く終える
     rr = r * bump * taper
     p1, p2 = rng.uniform(0, TAU, 2)
-    return tube(path, rr, None if rv is None else rr * (rv / r), n=n, side=side,
+    return tube(path, rr, None if rv is None else rr * (rv / r), n=n, side=side, cap0=not closed, cap1=not closed,
                 rmod=lambda a: 1 + 0.035 * np.sin(a * 5 + p1) + 0.02 * np.sin(a * 8 + p2))
 
 

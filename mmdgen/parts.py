@@ -117,6 +117,6 @@ def bow(center, span, size, tilt=0.35, facing=(0, 0, -1)):
     for sg in (1, -1):
         ax = side * sg * np.cos(tilt) + up * np.sin(tilt)
         R = rot_axes(ax, np.cross(f, ax), f)
-        meshes.append(ellipsoid(center + ax * span, [span, size, size * 0.35], R, nu=16, nv=10))
-    meshes.append(ellipsoid(center, [size * 0.55] * 3, nu=12, nv=8))
+        meshes.append(ellipsoid(center + ax * span, [span, size, size * 0.35], R, nu=40, nv=24))
+    meshes.append(ellipsoid(center, [size * 0.55] * 3, nu=28, nv=18))
     return meshes

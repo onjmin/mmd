@@ -25,6 +25,7 @@ class Material:
     alpha: float = 1.0
     specular: tuple = (0.0, 0.0, 0.0)
     power: float = 5.0
+    bake: str = None  # 塗りの焼き込み（bake.py）："ramp" は UV 全体、"v" は v だけを明るさに使う
     faces: list = field(default_factory=list)
 
 
@@ -92,13 +93,20 @@ class Model:
         self.textures = []
         self.rigids, self.joints = [], []
         self.default_toon_tex = None  # toon_tex を省いた材質に使うトゥーン
+        self.tex_set = None  # TextureSet。あれば単色の材質に影の帯テクスチャを付けて焼き込む
 
     # ---- 材質 ----
     def material(self, key, name, color, double=False, edge=True, toon=1, edge_size=1.2, shade=0.4,
-                 tex=None, sphere=None, sphere_mode=1, toon_tex=None, alpha=1.0, shadow=True, edge_color=(0.0, 0.0, 0.0)):
-        """tex を渡すと色はテクスチャから取る。輪郭線は既定で黒（edge_color=(0, 0, 0)）にする。"""
+                 tex=None, sphere=None, sphere_mode=1, toon_tex=None, alpha=1.0, shadow=True, edge_color=None,
+                 bake=None, shadow_color=None):
+        """tex を渡すと色はテクスチャから取る。輪郭線の色は既定で材質の色を暗くしたもの（真っ黒より線がなじむ）。
+        単色で影を受ける材質は、影の帯テクスチャを付けて塗りを焼き込む（shadow_color で影色を指定できる）。"""
         if key in self._mat:
             return key
+        if edge_color is None:
+            edge_color = tuple(float(x) * 0.32 for x in color[:3])
+        if tex is None and shadow and self.tex_set is not None:
+            tex, bake = self.tex_set.ramp(f"ramp_{key}.png", color, shadow_color), "ramp"
         flags = (pmx.MAT_GROUND_SHADOW | pmx.MAT_SHADOW_MAP | pmx.MAT_SELF_SHADOW) if shadow else 0
         if double:
             flags |= pmx.MAT_DOUBLE
@@ -109,7 +117,7 @@ class Model:
         ec = tuple(float(x) for x in edge_color)
         diffuse = (1.0, 1.0, 1.0) if tex else c
         mt = Material(name, key, diffuse, tuple(x * shade for x in diffuse), flags, edge_size, ec, toon,
-                      tex=tex, sphere=sphere, sphere_mode=sphere_mode, toon_tex=toon_tex, alpha=alpha)
+                      tex=tex, sphere=sphere, sphere_mode=sphere_mode, toon_tex=toon_tex, alpha=alpha, bake=bake)
         for t in (tex, sphere, toon_tex):
             if t and t not in self.textures:
                 self.textures.append(t)
