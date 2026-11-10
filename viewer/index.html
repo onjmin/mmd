@@ -152,6 +152,11 @@ function load(name) {
     if (compare) setupCompare(name);
     else if (Q.get("cam") === "face") faceCam();
     if (motion && Q.get("at") !== null) seek(+Q.get("at"));
+    // morph=まばたき:1,あ:0.5 のように開くと、その表情で写す
+    (Q.get("morph") || "").split(",").filter(Boolean).forEach((kv) => {
+      const [k, v] = kv.split(":"), i = m.morphTargetDictionary[k];
+      if (i !== undefined) m.morphTargetInfluences[i] = +(v ?? 1);
+    });
   }, undefined, (e) => console.error(e));
 }
 
@@ -187,30 +192,37 @@ function setupCompare(name) {
   }
   // yaw=度 で見る向きを回す（90 で横顔、45 で斜め）。正面の比較だけでは横顔の崩れに気づけない
   const yaw = +(Q.get("yaw") ?? 0) * Math.PI / 180;
+  const pitch = +(Q.get("pitch") ?? 0) * Math.PI / 180;
   const off = camera.position.clone().sub(controls.target);
-  camera.position.copy(controls.target).add(off.applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw));
+  off.applyAxisAngle(new THREE.Vector3(1, 0, 0), -pitch).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+  camera.position.copy(controls.target).add(off);
   controls.update();
 }
 
 // ?cam=face：顔の大写し（調整ページの表示用）。yaw=度 で斜めから、ui=0 で操作パネルを隠す
 function faceCam() {
   document.getElementById("physics").checked = false;
-  bone("左腕").rotation.set(0, 0, -0.62);
-  bone("右腕").rotation.set(0, 0, 0.62);
+  const down = +(Q.get("armdown") ?? 0.62);  // 腕を下ろす角（0 で T ポーズのまま）
+  bone("左腕").rotation.set(0, 0, -down);
+  bone("右腕").rotation.set(0, 0, down);
   const h = new THREE.Box3().setFromObject(mesh).max.y;
   const fov = camera.fov * Math.PI / 180;
   const span = +(Q.get("span") ?? 0.17);  // 写す高さ（身長比）
   const spanW = +(Q.get("spanw") ?? 0.11);  // 写す幅（身長比）。縦長の枠でも顔の幅が入るようにする
   const cy = h * +(Q.get("cy") ?? 0.885);
   const t = Math.tan(fov / 2);
-  controls.target.set(0, cy, 0);
-  camera.position.set(0, cy, Math.max(span * h / 2 / t, spanW * h / 2 / (t * camera.aspect)));
+  // cx・cz（身長比）で見る中心を左右・前後にずらし、pitch（度）で上下から見る（手や足の細部用）
+  const cx = h * +(Q.get("cx") ?? 0), cz = h * +(Q.get("cz") ?? 0);
+  controls.target.set(cx, cy, cz);
+  camera.position.set(cx, cy, cz + Math.max(span * h / 2 / t, spanW * h / 2 / (t * camera.aspect)));
   // hide=材質名,材質名 でその材質を隠す（顔にかかる小物など）
   const hide = (Q.get("hide") || "").split(",").filter(Boolean);
   mesh.material.forEach((mt) => { if (hide.includes(mt.name)) mt.visible = false; });
   const yaw = +(Q.get("yaw") ?? 0) * Math.PI / 180;
+  const pitch = +(Q.get("pitch") ?? 0) * Math.PI / 180;
   const off = camera.position.clone().sub(controls.target);
-  camera.position.copy(controls.target).add(off.applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw));
+  off.applyAxisAngle(new THREE.Vector3(1, 0, 0), -pitch).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+  camera.position.copy(controls.target).add(off);
   controls.update();
 }
 if (Q.get("ui") === "0") document.getElementById("ui").style.display = "none";

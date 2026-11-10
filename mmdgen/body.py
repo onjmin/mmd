@@ -517,6 +517,7 @@ class Character:
     def __init__(self, model, skin_color, eye_color, bust=1.0, eye=None, mouth=None, tex=None, hair_color=(0.2, 0.2, 0.2)):
         self.m = model
         self.tex = tex
+        self._hilite = {}  # 瞳の白い光の中心（目の板の上の座標。調整ページが使う）
         model.tex_set = tex
         self.hair_color = hair_color
         # 顔の調整値（mmdgen/face.py。調整ページで人が決めてキャラごとの json に保存したもの）
@@ -963,7 +964,8 @@ class Character:
 
     # ---- 顔 ----
     def build_face(self, closed_mouth_color=(0.45, 0.16, 0.17), blush=True, brow_color=None):
-        """目は白目・瞳・まつ毛の 3 層。口はリップラインと口内（上の歯・舌・口内奥）の 2 層で構成する。"""
+        """目は白目・瞳・ハイライト・下まぶた・上まつ毛・二重の 6 層。口はリップライン・唇の影・口内奥・舌・歯の 5 層。
+        部品を分けてあるので、表情ごとに別々に動かせる（じと目は上まつ毛だけ下げる、ハイライト消しは光だけ消す、など）。"""
         m = self.m
         h = self.head
         E = self.eye
@@ -985,7 +987,10 @@ class Character:
         m.material("iris", "瞳", self.eye_color, tex=T.iris("iris.png", self.eye_color, ext["iris"], k), **noedge)
         # まつ毛は真っ黒にせず、瞳の色を混ぜた暗い紫寄りの色（既製の萌えキャラと同じ。黒と白目の強い差は怖く見える）
         lash_c = np.clip(_mix_c(self.eye_color * 0.45, (0.30, 0.20, 0.34), 0.6) * F("lash_light"), 0, 1)
+        m.material("hilite", "ハイライト", (1, 1, 1), tex=T.hilite(), **noedge)
+        m.material("lowlash", "下まつ毛", lash_c, tex=T.lash(ext["lash"], k, "lash_lower.png", color=lash_c, part="lower"), **noedge)
         m.material("lash", "まつ毛", lash_c, tex=T.lash(ext["lash"], k, color=lash_c), **noedge)
+        m.material("eyelid", "二重", (0.36, 0.22, 0.20), tex=T.lash(ext["lash"], k, "eyelid.png", color=lash_c, part="crease"), **noedge)
         # 眉は髪色そのままでなく、赤みのある焦げ茶に寄せる（既製モデルの眉の色）
         bc = brow_color if brow_color is not None else _mix_c(np.asarray(self.hair_color) * 0.60, (0.40, 0.20, 0.20), 0.5)
         m.material("brow", "眉", bc, tex=T.brow("brow.png", bc), **noedge)
@@ -993,14 +998,21 @@ class Character:
             m.material("mouth", "口", closed_mouth_color, tex=T.mouth_line("mouth_line.png", closed_mouth_color), **noedge)
         else:
             m.material("mouth", "口", (0.28, 0.10, 0.11), **noedge)
-        m.material("mouth_in", "口内", (1, 1, 1), tex=T.mouth_interior("mouth_in.png", fang=M.get("fang", False)), **noedge)
+        m.material("lip", "唇", self.skin_color, tex=T.lip("lip.png", self.skin_color), **noedge)
+        m.material("mouth_in", "口内", (1, 1, 1), tex=T.mouth_interior("mouth_in.png"), **noedge)
+        m.material("tongue", "舌", (1, 1, 1), tex=T.mouth_interior("tongue.png", part="tongue"), **noedge)
+        m.material("teeth", "歯", (1, 1, 1), tex=T.mouth_interior("teeth.png", fang=M.get("fang", False), part="teeth"), **noedge)
         m.material("nose", "鼻", self.skin_color, tex=T.nose("nose.png", self.skin_color), **noedge)
         if blush:
             m.material("blush", "頬", (1.0, 0.5, 0.5), tex=T.blush(), **noedge)
+        m.material("hatch", "照れ", (1, 1, 1), tex=T.hatch(), **noedge)
         for name, en, panel in [("まばたき", "blink", 2), ("笑い", "smile", 2), ("ウィンク", "wink", 2),
-                                ("ウィンク右", "wink R", 2), ("あ", "a", 3), ("い", "i", 3), ("う", "u", 3),
-                                ("え", "e", 3), ("お", "o", 3),
-                                ("にこり", "cheerful", 1), ("怒り", "angry", 1), ("困る", "sad", 1)]:
+                                ("ウィンク右", "wink R", 2), ("じと目", "jito", 2), ("びっくり", "surprised", 2),
+                                ("瞳小", "pupil small", 2), ("ハイライト消し", "no highlight", 2),
+                                ("あ", "a", 3), ("い", "i", 3), ("う", "u", 3),
+                                ("え", "e", 3), ("お", "o", 3), ("口角上げ", "mouth up", 3), ("口角下げ", "mouth down", 3),
+                                ("にこり", "cheerful", 1), ("怒り", "angry", 1), ("困る", "sad", 1),
+                                ("上", "brow up", 1), ("下", "brow down", 1), ("照れ", "blush", 4)]:
             m.define_morph(name, en, panel)
 
         rx, ry = E["rx"], E["ry"]
@@ -1041,11 +1053,51 @@ class Character:
                 A0, A1, B0, B1 = ext[mat]
                 return plane(rx * (A1 - A0) / 2, B0 * ry, B1 * ry, s, cx=s * rx * (A0 + A1) / 2, cols=cols, rows=rows)
 
+            # 瞳の白い光：見る人から見て左上（-X 側）に大きな楕円、反対の下に小さな丸。両目とも同じ側に置く
+            hs = F("highlight")
+            ic_a, ic_b = -s * E["iris_in"] * rx, E["iris_y"] * ry  # 瞳の中心
+            iw, ih = E["iris"] * rx, E["iris_h"] * ry              # 瞳の半径
+            hl_centers = [(ic_a - 0.27 * iw, ic_b + 0.42 * ih), (ic_a + 0.30 * iw, ic_b - 0.44 * ih)]
+            hl_sizes = [(0.21 * iw * hs, 0.27 * ih * hs), (0.085 * iw * hs, 0.095 * ih * hs)]
+            self._hilite[jp] = [(a * s, b) for a, b in hl_centers]
             layers = [
                 ("eye_white", layer("eye_white", 13, 11), 0.0025, "頭"),
                 ("iris", layer("iris", 11, 11), 0.0048, jp + "目"),
+            ] + [("hilite", plane(wa, -wb, wb, 1.0, cx=ca_, cy=cb_, cols=5, rows=5), 0.0058, jp + "目")
+                 for (ca_, cb_), (wa, wb) in zip(hl_centers, hl_sizes) if hs > 0.01] + [
+                ("lowlash", layer("lash", 17, 15), 0.0066, "頭"),
                 ("lash", layer("lash", 17, 15), 0.0072, "頭"),
+                ("eyelid", layer("lash", 17, 15), 0.0074, "頭"),
             ]
+            upper = ("lash", "eyelid", "lowlash")  # まばたきで閉じた線に重なる部品
+            pupil = ("iris", "hilite")
+
+            def jito(mat):
+                """じと目：上まつ毛と二重だけを半分下ろし、白目と瞳は上を押しつぶしてまつ毛の下に隠す。下まぶたは動かさない。"""
+                def f(r):
+                    b = r[:, 1]
+                    if mat in ("lash", "eyelid"):
+                        r[:, 1] = b - 0.50 * ry * smoothstep(-0.8 * ry, 0.8 * ry, b)
+                    elif mat != "lowlash":
+                        c = 0.36 * ry
+                        r[:, 1] = np.where(b > c, c + (b - c) * 0.16, b)
+                    return r
+                return f
+
+            def wide(mat):
+                """びっくり：目を縦に開き、瞳は小さく。"""
+                def f(r):
+                    r[:, 1] = r[:, 1] * 1.12
+                    if mat in pupil:
+                        r[:, 0] = ic_a + (r[:, 0] - ic_a) * 0.84
+                        r[:, 1] = ic_b + (r[:, 1] - ic_b) * 0.76
+                    return r
+                return f
+
+            def small(r):
+                r[:, 0] = ic_a + (r[:, 0] - ic_a) * 0.72
+                r[:, 1] = ic_b + (r[:, 1] - ic_b) * 0.72
+                return r
             p0, n_eye, e1_eye = self.eye_frame(s)
 
             def plate(rows, off):
@@ -1056,14 +1108,22 @@ class Character:
                 rings = [p0 + r[:, :1] * e1_eye + r[:, 1:2] * UP + n_eye * dome(r) for r in rows]
                 return _flat_loft(rings, n_eye, False)
 
-            for mat, rows, off, bone in layers:
-                rows = tilted(rows)
-                shut = dict(keep=0.2, pivot=1.0 * ry) if mat == "lash" else {}
+            for mat, rows0, off, bone in layers:
+                rows = tilted(rows0)
+                shut = dict(keep=0.2, pivot=1.0 * ry) if mat in upper else {}
                 base = m.add(mat, plate(rows, off), m.skin_fixed(bone))
                 blink = plate(remap_ab(rows, closer(-0.20, **shut)), off)[0]
                 m.add_morph_part("まばたき", base, blink)
                 m.add_morph_part("笑い", base, plate(remap_ab(rows, closer(0.28, **shut)), off)[0])
                 m.add_morph_part("ウィンク" if s > 0 else "ウィンク右", base, blink)
+                # 傾きを掛ける前の形を変えてから傾ける（部品どうしがずれない）
+                m.add_morph_part("じと目", base, plate(tilted(remap_ab(rows0, jito(mat))), off)[0])
+                m.add_morph_part("びっくり", base, plate(tilted(remap_ab(rows0, wide(mat))), off)[0])
+                if mat in pupil:
+                    m.add_morph_part("瞳小", base, plate(tilted(remap_ab(rows0, small)), off)[0])
+                if mat == "hilite":
+                    ctr = np.mean(np.vstack(rows0), axis=0)
+                    m.add_morph_part("ハイライト消し", base, plate(tilted(remap_ab(rows0, lambda r, c=ctr: c + (r - c) * 0.0)), off)[0])
             # 眉は目の上に少し離して（美少女モデルの眉の高さ）、目頭の上から目尻の少し手前まで長くかける
             bd = Head.dir(s * E["yaw"], E["pitch"] + 0.42)
             bpdir = Head.dir(s * E["yaw"] * 0.38, E["pitch"] + 0.36)
@@ -1074,6 +1134,16 @@ class Character:
             m.add_morph_part("にこり", b_base, h.decal(bd, remap_ab(brow_rows, lambda r: np.stack([r[:, 0], r[:, 1] - 0.002 - 0.12 * (r[:, 0] / 0.023) ** 2 * 0.005], 1)), 0.0085, closed=False, plane_dir=bpdir)[0])
             m.add_morph_part("怒り", b_base, h.decal(bd, remap_ab(brow_rows, lambda r, s=s: np.stack([r[:, 0], r[:, 1] + 0.22 * r[:, 0] * s - 0.002], 1)), 0.0085, closed=False, plane_dir=bpdir)[0])
             m.add_morph_part("困る", b_base, h.decal(bd, remap_ab(brow_rows, lambda r, s=s: np.stack([r[:, 0], r[:, 1] - 0.22 * r[:, 0] * s + 0.002], 1)), 0.0085, closed=False, plane_dir=bpdir)[0])
+            for nm, dy in (("上", 0.0035), ("下", -0.0030), ("びっくり", 0.0030), ("じと目", -0.0018)):
+                m.add_morph_part(nm, b_base, h.decal(bd, remap_ab(brow_rows, lambda r, dy=dy: r + [0, dy]), 0.0085, closed=False, plane_dir=bpdir)[0])
+            # 照れの斜線：頬の上
+            hh = E["h"] - 0.105
+            hd_ = Head.dir(s * 0.50, self.head.pitch_at(hh, 0.50))
+            hp_ = Head.dir(s * 0.30, self.head.pitch_at(hh, 0.30))
+            hatch_rows = plane(0.0125, -0.0048, 0.0048, s, cols=9, rows=5)
+            # ふだんは肌の内側に沈めて隠し、モーフで表へ出す
+            hb = m.add("hatch", h.decal(hd_, hatch_rows, -0.0060, closed=False, plane_dir=hp_), m.skin_fixed("頭"))
+            m.add_morph_part("照れ", hb, h.decal(hd_, hatch_rows, 0.0030, closed=False, plane_dir=hp_)[0])
             if blush:
                 # 目の下の縁から口の高さまで、頬に広くふんわり置く
                 bh = E["h"] - 0.12
@@ -1093,13 +1163,29 @@ class Character:
             lip_base_ab = plane(M["rx"], -0.0048, 0.0048, 1.0, cols=19, rows=7)
             in_base_ab = mouth_grid_ab(M["rx"] * 0.65, 0.0002, M["smile"] * 0.2, top=0.45, bottom=0.55)
             base_lip = m.add("mouth", h.decal(md, lip_base_ab, 0.0075, closed=False), m.skin_fixed("頭"))
-            base_in = m.add("mouth_in", h.decal(md, in_base_ab, 0.0010, closed=False), m.skin_fixed("頭"))
+            in_off = 0.0010
         else:
             # 普段から開いた元気な口（キリコ・フェリス）：外周のリップ縁 ("mouth") と内側の歯・舌 ("mouth_in")
             lip_base_ab = ellipse_ab(0, 0, M["rx"], M["ry"] * 1.06, top=0.45, bottom=M["open_bottom"], curve=M["smile"] * 0.35)
             in_base_ab = mouth_grid_ab(M["rx"] * 0.93, M["ry"], M["smile"], top=0.45, bottom=M["open_bottom"])
             base_lip = m.add("mouth", h.decal(md, lip_base_ab, 0.0028), m.skin_fixed("頭"))
-            base_in = m.add("mouth_in", h.decal(md, in_base_ab, 0.0048, closed=False), m.skin_fixed("頭"))
+            in_off = 0.0048
+        # 口の中は同じ形の板を 3 枚重ねる：奥、舌、歯（後ろから順に）
+        in_layers = [(mat, m.add(mat, h.decal(md, in_base_ab, in_off + dz, closed=False), m.skin_fixed("頭")), dz)
+                     for mat, dz in (("mouth_in", 0.0), ("tongue", 0.0003), ("teeth", 0.0006))]
+        # 唇の影：口のすぐ下の肌に置く。口が開くとあごと一緒に下がる
+        lip_y = -(0.0042 if is_closed_mouth else M["ry"] * M["open_bottom"] + 0.0030)
+        lip_ab = plane(M["rx"] * 0.80, -0.0034, 0.0034, 1.0, cy=lip_y, cols=13, rows=5)
+        base_shadow = m.add("lip", h.decal(md, lip_ab, 0.0016, closed=False), m.skin_fixed("頭"))
+
+        # 口角の上げ下げ：口の端ほど大きく上下させる
+        def corner(dy):
+            return lambda r: np.stack([r[:, 0], r[:, 1] + dy * np.clip(np.abs(r[:, 0]) / max(M["rx"], 1e-6), 0, 1.3) ** 2], 1)
+        for nm, dy in (("口角上げ", 0.0030), ("口角下げ", -0.0030)):
+            lip_off = 0.0075 if is_closed_mouth else 0.0028
+            m.add_morph_part(nm, base_lip, h.decal(md, remap_ab(lip_base_ab, corner(dy)), lip_off, closed=is_closed_mouth is False)[0])
+            for mat, bi, dz in in_layers:
+                m.add_morph_part(nm, bi, h.decal(md, remap_ab(in_base_ab, corner(dy)), in_off + dz, closed=False)[0])
 
         self._write_face_meta(ext, lash_c)
 
@@ -1121,12 +1207,17 @@ class Character:
                 ], 1))
                 in_v_ab = mouth_grid_ab(rx_v * 0.94, ry_v, sm, top=0.45, bottom=1.0)
                 m.add_morph_part(name, base_lip, h.decal(md, lip_v_ab, 0.0055, closed=False)[0])
-                m.add_morph_part(name, base_in, h.decal(md, in_v_ab, 0.0042, closed=False)[0])
+                for mat, bi, dz in in_layers:
+                    m.add_morph_part(name, bi, h.decal(md, in_v_ab, 0.0042 + dz, closed=False)[0])
             else:
                 lip_v_ab = ellipse_ab(0, 0, rx_v, ry_v * 1.06, top=0.45, bottom=1.0, curve=sm * 0.35)
                 in_v_ab = mouth_grid_ab(rx_v * 0.93, ry_v, sm, top=0.45, bottom=1.0)
                 m.add_morph_part(name, base_lip, h.decal(md, lip_v_ab, 0.0028)[0])
-                m.add_morph_part(name, base_in, h.decal(md, in_v_ab, 0.0048, closed=False)[0])
+                for mat, bi, dz in in_layers:
+                    m.add_morph_part(name, bi, h.decal(md, in_v_ab, 0.0048 + dz, closed=False)[0])
+            # 唇の影は下唇について下がる
+            drop = ry_v - (0.0015 if is_closed_mouth else M["ry"] * M["open_bottom"])
+            m.add_morph_part(name, base_shadow, h.decal(md, remap_ab(lip_ab, lambda r, d=float(np.clip(drop, 0.0, 0.0035)): r - [0, d]), 0.0016, closed=False)[0])
 
             # 口を大きく開けるモーフでは、あご先の肌も自然に少し下がるようにする
             if self._head_info is not None and jaw_drop > 0:
@@ -1134,7 +1225,10 @@ class Character:
                 h_rel = (hv[:, 1] - h.y0) / h.H
                 front_mask = np.clip((-hv[:, 2] - 0.015) / 0.035, 0.0, 1.0)
                 chin_mask = np.clip((0.20 - h_rel) / 0.20, 0.0, 1.0) ** 1.3 * np.exp(-(hv[:, 0] / 0.032) ** 2)
-                hv[:, 1] -= jaw_drop * front_mask * chin_mask
+                # 下げるのは開いた口の下端より下だけ。口の高さの肌まで下げると、あごへ回り込む面が前へ出て口の中にかぶさる
+                mouth_bottom = h.point(md)[1] - ry_v
+                below = np.clip((mouth_bottom - 0.0015 - hv[:, 1]) / 0.004, 0.0, 1.0)
+                hv[:, 1] -= jaw_drop * front_mask * chin_mask * below
                 m.add_morph_part(name, self._head_info, hv)
 
     def _write_face_meta(self, ext, lash_c):
@@ -1146,7 +1240,9 @@ class Character:
         sides = {}
         for _, _, sg in SIDES:
             p0, n, e1 = self.eye_frame(sg)
-            sides["L" if sg > 0 else "R"] = dict(p0=(p0 * s).tolist(), n=n.tolist(), e1=e1.tolist(), sign=sg)
+            jp = "左" if sg > 0 else "右"
+            sides["L" if sg > 0 else "R"] = dict(p0=(p0 * s).tolist(), n=n.tolist(), e1=e1.tolist(), sign=sg,
+                                                 hilite=[[a * s, b * s] for a, b in self._hilite.get(jp, [])])
         meta = dict(
             scale=s,
             values={k: _face.get(k) for k in _face.DEFAULTS},

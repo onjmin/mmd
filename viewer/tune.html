@@ -194,7 +194,8 @@ function apply() {
     const neck = smooth(-0.95, -1.15, v);  // あごの下と首は変えない
     return f * (1 - neck) + neck;
   };
-  const eyeParts = new Set(["白目", "瞳", "まつ毛", "眉"]);
+  // 目の部品（mmdgen/body.py の build_face と同じ層）。ハイライトは瞳と一緒に動き、二重はまつ毛と一緒に動く
+  const eyeParts = new Set(["白目", "瞳", "ハイライト", "下まつ毛", "まつ毛", "二重", "眉"]);
   for (const [name, ids] of Object.entries(base.byMat)) {
     if (eyeParts.has(name)) continue;
     for (const i of ids) P[i * 3] = B[i * 3] * widthRatio(B[i * 3 + 1]);
@@ -205,6 +206,7 @@ function apply() {
   const tilt0 = E.tilt, tilt1 = E.tilt - v0.eye_tilt + v1.eye_tilt;
   const iw = v1.iris_w / v0.iris_w, ih = v1.iris_h / v0.iris_h, iy = (v1.iris_y - v0.iris_y) * ry;
   const lk = v1.lash / v0.lash;
+  const hk = v1.highlight / Math.max(v0.highlight, 0.01);
   const ca = -E.iris_in * rx, cb = E.iris_y * ry;  // 瞳の中心（a, b）
   const top = 0.92 * ry;  // まつ毛の帯はここより上を太くする
   const rel = new THREE.Vector3(), out = new THREE.Vector3();
@@ -227,7 +229,17 @@ function apply() {
           const d = rel.dot(n);
           b -= tilt0 * a;  // 傾きを外してから
           if (name === "瞳") { a = ca + (a - ca) * iw; b = cb + (b - cb) * ih + iy; }
-          if (name === "まつ毛" && b > top) b = top + (b - top) * lk;
+          if (name === "ハイライト") {
+            // 光の板は自分の中心（近い方）のまわりで大きさを変え、中心は瞳と一緒に動かす
+            const cs = side.hilite || [];
+            let c = cs[0];
+            for (const q of cs) if (Math.hypot(a - q[0], b - q[1]) < Math.hypot(a - c[0], b - c[1])) c = q;
+            if (c) {
+              const na = ca + (c[0] - ca) * iw, nb = cb + (c[1] - cb) * ih + iy;
+              a = na + (a - c[0]) * iw * hk; b = nb + (b - c[1]) * ih * hk;
+            }
+          }
+          if ((name === "まつ毛" || name === "二重") && b > top) b = top + (b - top) * lk;
           a *= S; b *= Sy;
           b += tilt1 * a;
           out.copy(q0).addScaledVector(e1, a * sg).addScaledVector(n, d);
@@ -241,7 +253,7 @@ function apply() {
   mesh.geometry.computeBoundingSphere();
 
   // 色と塗り：まつ毛の明るさは材質の色で、瞳と白目はテクスチャを描き直す
-  if (base.lashColor) base.mats["まつ毛"].color.copy(base.lashColor).multiplyScalar(v1.lash_light / v0.lash_light);
+  if (base.lashColor) for (const n of ["まつ毛", "下まつ毛"]) base.mats[n]?.color.copy(base.lashColor).multiplyScalar(v1.lash_light / v0.lash_light);
   const irisKey = ["pupil", "highlight", "eye_color", "iris_w", "iris_h", "iris_y"].map((k) => v1[k]).join();
   if (irisKey !== apply.irisKey) { apply.irisKey = irisKey; redraw("瞳", drawIris()); }
   if (v1.white_shade !== apply.white) { apply.white = v1.white_shade; redraw("白目", drawWhite()); }
@@ -303,8 +315,7 @@ function drawIris() {
   ctx.filter = `blur(${n * 0.012}px)`;  // 全体をやわらかく
   ctx.drawImage(paint, 0, 0);
   ctx.filter = "none";
-  const hs = values.highlight;  // 白い光（ぼかさない）
-  if (hs > 0.01) { ctx.fillStyle = "#fafafa"; ctx.beginPath(); ctx.ellipse(n * 0.37, n * 0.30, n * 0.07 * hs, n * 0.10 * hs, 0, 0, 7); ctx.fill(); }
+  // 白い光は瞳に描かない（別の板「ハイライト」が重なる）
   // 丸の外と、白目の輪郭の外を消す
   ctx.globalCompositeOperation = "destination-in";
   ctx.drawImage(round, 0, 0);

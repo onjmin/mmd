@@ -193,19 +193,42 @@ class TextureSet:
         alpha = np.clip((1.0 - r) * 40.0, 0.0, 1.0)
         out = _offset(eye_outline(), np.full(len(eye_outline()), 0.04), k)
         alpha = alpha * _mask(_to_px(ext, n)(out), n)
-        d = ImageDraw.Draw(img)
-        # 白い光：左上の縦長の楕円（ぼかさない）
-        hs = _face.get("highlight")
-        if hs > 0.01:
-            cx, cy, hw, hh = 0.37, 0.30, 0.07 * hs, 0.10 * hs
-            d.ellipse([n * (cx - hw), n * (cy - hh), n * (cx + hw), n * (cy + hh)], fill=(250, 250, 250))
+        # 白い光は瞳に描かず、別の板（ハイライト）で重ねる（消したり大きさを変えたりできるように）
         img.putalpha(Image.fromarray((alpha * 255).astype(np.uint8)))
         return self.save(img.resize((256, 256), Image.LANCZOS), name)
 
-    def lash(self, ext, k, name="lash.png", color=(0.05, 0.04, 0.05)):
+    def hilite(self, name="hilite.png"):
+        """瞳の白い光：縁だけ少しぼかした白い丸（板の縦横比で楕円になる）。"""
+        n = 96
+        y, x = np.mgrid[0:n, 0:n] / (n - 1) * 2 - 1
+        a = np.clip((0.94 - np.sqrt(x * x + y * y)) / 0.10, 0, 1)
+        arr = np.dstack([np.full((n, n, 3), 0.99), a])
+        return self.save(Image.fromarray((arr * 255).astype(np.uint8), "RGBA"), name)
+
+    def hatch(self, name="hatch.png", color=(0.92, 0.36, 0.40)):
+        """照れの斜線：頬に並ぶ短い赤い線。"""
+        w, h = 256 * S, 96 * S
+        img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        d = ImageDraw.Draw(img)
+        for i in range(5):
+            x = w * (0.18 + 0.16 * i)
+            d.line([(x + h * 0.10, h * 0.22), (x - h * 0.10, h * 0.78)], fill=_rgb(color, 215), width=int(h * 0.055))
+        return self.save(img.resize((256, 96), Image.LANCZOS), name)
+
+    def lip(self, name="lip.png", skin_color=(1.0, 0.86, 0.76)):
+        """下唇の下の淡い影：口のすぐ下に置く三日月。唇のふくらみを出す。"""
+        w, h = 256, 96
+        y, x = np.mgrid[0:h, 0:w] / np.array([h - 1, w - 1])[:, None, None] * 2 - 1
+        band = np.exp(-((y + 0.15 - 0.45 * x * x) / 0.30) ** 2) * np.clip(1 - x * x, 0, 1) ** 1.5
+        sc = np.asarray(skin_color, float) * np.array([0.90, 0.62, 0.58])
+        arr = np.dstack([np.broadcast_to(np.clip(sc, 0, 1), (h, w, 3)), band * 0.38])
+        return self.save(Image.fromarray((arr * 255).astype(np.uint8), "RGBA"), name)
+
+    def lash(self, ext, k, name="lash.png", color=(0.05, 0.04, 0.05), part="upper"):
         """上まつ毛：白目の上の縁に沿う帯。太さは白目の高さの 3 割ほどで、
         目頭の少し上で細い鉤として始まり、上の縁で太く、目尻の角でいちばん太くなって外側の縁を下の方まで包んで細る。
-        目尻の外へのハネは付けない（顔の肌に根元が隠れて浮いた黒い点に見える）。上に細い二重の線、下まぶたは目尻から目の中ほどまで茶の線（ないと眼球がむき出しに見える）。"""
+        part で描く部品を選ぶ（同じ範囲の板を 3 枚重ねる）："upper" 上まつ毛と目尻の短い房、"crease" 二重の線、
+        "lower" 下まぶたの線（目尻から目の中ほどまで。ないと眼球がむき出しに見える）と目尻の下の短いまつ毛。"""
         n = 512 * S
         img = Image.new("RGBA", (n, n), (0, 0, 0, 0))
         d = ImageDraw.Draw(img)
@@ -223,18 +246,32 @@ class TextureSet:
         outer = _offset(arc, th, k)
         band = [tuple(p) for p in outer] + [tuple(p) for p in inner[::-1]]
         edge = _rgb(_mix(color, (0.30, 0.18, 0.17), 0.55))
-        d.polygon(to_px(band), fill=edge)
-        core_o = _offset(arc, th * 0.70, k)
-        core_i = _offset(arc, -0.16 * np.clip(th / 0.12, 0, 1), k)
-        sel = (s > 0.03) & (s < 0.97)
-        d.polygon(to_px([tuple(p) for p in core_o[sel][::-1]] + [tuple(p) for p in core_i[sel]]), fill=_rgb(color))
+        if part == "upper":
+            d.polygon(to_px(band), fill=edge)
+            core_o = _offset(arc, th * 0.70, k)
+            core_i = _offset(arc, -0.16 * np.clip(th / 0.12, 0, 1), k)
+            sel = (s > 0.03) & (s < 0.97)
+            d.polygon(to_px([tuple(p) for p in core_o[sel][::-1]] + [tuple(p) for p in core_i[sel]]), fill=_rgb(color))
+            # 目尻の角から外へ出る短いまつ毛の房を 2 本（帯の中から生え、先は細く消える）
+            for ds, ln, ang in ((-0.035, 0.26, 0.55), (0.03, 0.20, 0.15)):
+                i0 = int(np.argmin(np.abs(s - (sc + ds))))
+                root = outer[i0] * [k, 1.0]
+                dirv = np.array([np.cos(ang), np.sin(ang)])
+                tip = root + dirv * ln
+                side = np.array([-dirv[1], dirv[0]]) * 0.055
+                back = root - dirv * 0.10
+                tri = [(back + side) / [k, 1.0], (back - side) / [k, 1.0], tip / [k, 1.0]]
+                d.polygon(to_px([tuple(p) for p in tri]), fill=_rgb(color))
+            return self.save(img.resize((n // S, n // S), Image.LANCZOS), name)
 
-        # 二重の線：まつ毛の上、目頭寄りから目尻手前まで細く
-        sel = (s > 0.22) & (s < sc - 0.03)
-        crease = _offset(arc, th + 0.18, k)[sel]
-        w = np.sin(np.linspace(0, np.pi, len(crease))) ** 0.6
-        for a, b, ww in zip(crease[:-1], crease[1:], w[:-1]):
-            d.line(to_px([tuple(a), tuple(b)]), fill=_rgb((0.36, 0.22, 0.20), 180), width=max(1, int(n * 0.007 * (0.4 + 0.6 * ww))))
+        if part == "crease":
+            # 二重の線：まつ毛の上、目頭寄りから目尻手前まで細く
+            sel = (s > 0.20) & (s < sc - 0.02)
+            crease = _offset(arc, th + 0.18, k)[sel]
+            w = np.sin(np.linspace(0, np.pi, len(crease))) ** 0.6
+            for a, b, ww in zip(crease[:-1], crease[1:], w[:-1]):
+                d.line(to_px([tuple(a), tuple(b)]), fill=_rgb((0.36, 0.22, 0.20), 190), width=max(1, int(n * 0.008 * (0.4 + 0.6 * ww))))
+            return self.save(img.resize((n // S, n // S), Image.LANCZOS), name)
 
         # 下まぶた：目尻側の下の縁に沿う淡い茶の線（目頭側は描かない）
         o = eye_outline()
@@ -245,6 +282,15 @@ class TextureSet:
         lo = _offset(lo, np.full(len(lo), 0.02), k)  # 白目の縁のすぐ外
         for a, b, ww in zip(lo[:-1], lo[1:], w[:-1]):
             d.line(to_px([tuple(a), tuple(b)]), fill=_rgb((0.55, 0.30, 0.24), int(255 * min(1, 0.35 + ww))), width=max(1, int(n * 0.010 * ww)))
+        # 目尻の下の短い下まつ毛を 2 本
+        for frac, ln in ((0.10, 0.13), (0.22, 0.10)):
+            i0 = int(frac * (len(lo) - 1))
+            root = lo[i0] * [k, 1.0]
+            dirv = np.array([0.45, -0.89])
+            tip = root + dirv * ln
+            side = np.array([-dirv[1], dirv[0]]) * 0.028
+            tri = [(root + side) / [k, 1.0], (root - side) / [k, 1.0], tip / [k, 1.0]]
+            d.polygon(to_px([tuple(p) for p in tri]), fill=_rgb(_mix(color, (0.45, 0.25, 0.22), 0.4), 235))
         return self.save(img.resize((n // S, n // S), Image.LANCZOS), name)
 
     def brow(self, name, color):
@@ -308,8 +354,9 @@ class TextureSet:
             d.line([(x0, y0), (x1, y1)], fill=_rgb(c, int(170 * np.sin(np.pi * t) ** 0.6)), width=max(1, int(h * 0.018)))
         return self.save(img.resize((256, 128), Image.LANCZOS), name)
 
-    def mouth_interior(self, name="mouth_in.png", fang=False):
-        """開いた口の中（上部に白い歯並、奥に暗い口内、下部に丸いピンクの舌を一枚のUVに描く）。"""
+    def mouth_interior(self, name="mouth_in.png", fang=False, part="back"):
+        """開いた口の中。同じ UV の板 3 枚に分けて描く：part="back" 奥の暗い口内、"tongue" 下の丸いピンクの舌、
+        "teeth" 上の白い歯並（fang で八重歯）。舌と歯は自分の形の外を透明にする。"""
         n = 256 * S
         v, u = np.mgrid[0:n, 0:n] / (n - 1)
         x = (u - 0.5) * 2.0
@@ -324,7 +371,6 @@ class TextureSet:
         groove = np.exp(-((x / 0.12) ** 2)) * np.clip(1.0 - tt, 0.0, 1.0) * 0.12
         tongue_col = np.clip(tongue_col - groove[..., None], 0.0, 1.0)
         t_blend = np.clip((v - tongue_top) * 35.0, 0.0, 1.0)[..., None]
-        col = col * (1 - t_blend) + tongue_col * t_blend
 
         teeth_bot = 0.25 + 0.04 * (x ** 2)
         if fang:
@@ -332,13 +378,21 @@ class TextureSet:
         t_teeth = np.clip((teeth_bot - v) * 40.0, 0.0, 1.0)[..., None]
         tooth_shade = 1.0 - 0.14 * (x ** 2)[..., None]
         tooth_col = np.array([0.98, 0.97, 0.96]) * tooth_shade
-        col = col * (1 - t_teeth) + tooth_col * t_teeth
+        # 歯と歯の間の細い筋
+        gaps = np.clip(1 - np.abs(((x * 3.5 + 0.5) % 1.0) - 0.5) / 0.06, 0, 1)[..., None] * 0.10
+        tooth_col = tooth_col * (1 - gaps)
 
         r_edge = np.sqrt(x * x + ((v - 0.5) * 2.0) ** 2)
         rim = np.clip((r_edge - 0.88) / 0.10, 0.0, 1.0)[..., None]
-        col = col * (1 - 0.65 * rim) + np.array([0.32, 0.12, 0.13]) * (0.65 * rim)
-
-        img = Image.fromarray((np.clip(col, 0, 1) * 255).astype(np.uint8), "RGB")
+        if part == "back":
+            col = col * (1 - 0.65 * rim) + np.array([0.32, 0.12, 0.13]) * (0.65 * rim)
+            img = Image.fromarray((np.clip(col, 0, 1) * 255).astype(np.uint8), "RGB")
+            return self.save(img.resize((256, 256), Image.LANCZOS), name)
+        if part == "tongue":
+            col, alpha = tongue_col * (1 - 0.35 * rim), t_blend
+        else:
+            col, alpha = tooth_col * np.ones_like(col), t_teeth
+        img = Image.fromarray((np.clip(np.dstack([col, alpha]), 0, 1) * 255).astype(np.uint8), "RGBA")
         return self.save(img.resize((256, 256), Image.LANCZOS), name)
 
     def navel(self, name="navel.png", skin_color=(1.0, 0.86, 0.76)):
