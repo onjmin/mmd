@@ -333,10 +333,26 @@ def hair(c):
             0.5 - (orb_mesh[0][:, 1] - orb[1]) / 0.035,
         ])
         m.add("yinyang", orb_mesh, m.skin_fixed("頭"), uv=np.clip(orb_uv, 0.02, 0.98))
+        # 玉を留める金の輪（玉のふち）と、結い髪の根元を縛る赤いひも
+        m.add("gold", torus(orb, [0, 0, 1], 0.0178, 0.0013, n=40, m=8), m.skin_fixed("頭"))
+        m.add("red_trim", torus(base + d * 0.002, d, 0.0150, 0.0018, n=32, m=8), m.skin_fixed("頭"))
         # ヘッドセット（左耳）とマイク（あごの輪郭線と重なって二重あごに見えないよう、頬の外側から口元の少し横へすっきり伸ばす）
     ear = c.head.c + np.array([c.head.r[0] + 0.006, -0.010, 0.004])  # 頭の横幅に沿わせる
-    m.add("gray", ellipsoid(ear, [0.007, 0.016, 0.014]), m.skin_fixed("頭"))
+    hd = m.skin_fixed("頭")
+    m.add("gray", ellipsoid(ear, [0.007, 0.016, 0.014], nu=32, nv=20), hd)
+    # 耳当ての外側：ひとまわり小さい殻、縁の金の輪、真ん中の緑のランプ
+    m.add("black", ellipsoid(ear + [0.0045, 0, 0], [0.0045, 0.0125, 0.0108], nu=28, nv=16), hd)
+    m.add("gold", torus(ear + [0.0050, 0, 0], [1, 0, 0], 0.0118, 0.0010, n=36, m=8), hd)
+    m.add("jade", ellipsoid(ear + [0.0088, 0, 0], [0.0014, 0.0034, 0.0034], nu=16, nv=10), hd)
     mic = catmull([ear + np.array([0.002, -0.008, -0.004]), c.head.c + np.array([0.056, -0.036, -0.042]),
                    c.head.c + np.array([0.024, -0.048, -0.072])], 14)
-    m.add("gray", tube(mic, 0.0018, n=6), m.skin_fixed("頭"))
-    m.add("gray", ellipsoid(mic[-1], [0.0045] * 3, nu=10, nv=6), m.skin_fixed("頭"))
+    m.add("gray", tube(mic, 0.0018, n=10), hd)
+    # アームの付け根の関節と、マイクの手前の継ぎ手
+    m.add("gray", ellipsoid(mic[0], [0.0038, 0.0038, 0.0038], nu=16, nv=10), hd)
+    m.add("gold", torus(mic[-3], mic[-1] - mic[-4], 0.0024, 0.0008, n=20, m=6), hd)
+    # 風よけのスポンジ：アームの向きに長い黒い楕円
+    md = mic[-1] - mic[-3]
+    md /= np.linalg.norm(md)
+    side = np.cross(md, [0, 1.0, 0])
+    side /= np.linalg.norm(side)
+    m.add("black", ellipsoid(mic[-1] + md * 0.003, [0.0072, 0.0050, 0.0050], rot_axes(md, np.cross(side, md), side), nu=24, nv=14), hd)

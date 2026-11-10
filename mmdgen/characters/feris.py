@@ -46,6 +46,9 @@ def build(out_dir):
     m.material("hat", "帽子", HAT, double=True, toon=0)
     m.material("beak", "帽子のくちばし", BEAK, toon=0)
     m.material("hat_eye", "帽子の目", (0.08, 0.06, 0.06), toon=0)
+    m.material("hat_trim", "帽子の縁", tuple(np.array(HAT) * 0.72), toon=0, edge=False)
+    m.material("beak_line", "くちばしの線", tuple(np.array(BEAK) * [0.80, 0.55, 0.30]), toon=0, edge=False)
+    m.material("hat_shine", "帽子の目の光", (1.0, 1.0, 1.0), toon=0, edge=False)
     m.material("feather", "白い羽", (0.98, 0.98, 0.96), double=True, toon=0)
     m.material("flame", "羽", FLAME, double=True, toon=1)
     m.material("flame_in", "羽の内側", FLAME_IN, double=True, toon=1)
@@ -160,10 +163,24 @@ def hat(c):
                  skin=m.skin_fixed("頭"))
     # くちばし：額の上に張り出す平たい丸
     bc = hc + np.array([0, -0.10 * hr[1], -0.93 * hr[2]])
-    m.add("beak", ellipsoid(bc, [0.55 * hr[0], 0.30 * hr[1], 0.40 * hr[2]], nu=24, nv=12), m.skin_fixed("頭"))
+    br = np.array([0.55 * hr[0], 0.30 * hr[1], 0.40 * hr[2]])
+    m.add("beak", ellipsoid(bc, br, nu=48, nv=24), m.skin_fixed("頭"))
+    # くちばしの合わせ目（上下の境の線）と、上の小さな鼻の穴
+    seam = ring(bc, [1, 0, 0], [0, 0, 1], br[0] * 1.012, br[2] * 1.012, 40, np.pi * 1.04, np.pi * 1.96, closed=False)
+    m.add("beak_line", tube(seam, 0.0011, n=6, cap0=True, cap1=True), m.skin_fixed("頭"))
+    for sg in (1, -1):
+        nd = np.array([sg * 0.20, 0.80, -0.56])
+        nd /= np.linalg.norm(nd)
+        m.add("beak_line", ellipsoid(bc + nd * br * 1.0, [0.0022, 0.0010, 0.0016], nu=12, nv=8), m.skin_fixed("頭"))
+    # 帽子の縁：かぶり口をぐるりと回る太い縫い目
+    rim_y = -0.12 * hr[1]
+    rim = ring(hc + [0, rim_y, 0], [1, 0, 0], [0, 0, 1], hr[0] * 0.995, hr[2] * 0.995, 96)
+    m.add("hat_trim", tube(np.vstack([rim, rim[:1]]), 0.0030, n=10), m.skin_fixed("頭"))
     for sg in (1, -1):
         d = Head.dir(sg * 0.55, 0.42)
-        m.add("hat_eye", ellipsoid(hc + d * hr * 1.0, [0.0045, 0.0055, 0.0045], nu=12, nv=8), m.skin_fixed("頭"))
+        m.add("hat_eye", ellipsoid(hc + d * hr * 1.0, [0.0045, 0.0055, 0.0045], nu=20, nv=12), m.skin_fixed("頭"))
+        m.add("hat_shine", ellipsoid(hc + d * hr * 1.0 + d * 0.0040 + [-0.0014, 0.0020, 0], [0.0014, 0.0016, 0.0010], nu=10, nv=6),
+              m.skin_fixed("頭"))
         # 帽子の横の白い羽
         root = hc + Head.dir(sg * 1.30, 0.20) * hr
         for k, (dy, ln) in enumerate([(0.026, 0.034), (0.012, 0.040), (-0.002, 0.030)]):
@@ -214,27 +231,49 @@ def chest_mark(pos, y, w, h, off=0.004):
 
 
 def wings(c):
-    """背中の橙の鳥の羽。肩甲骨から肩の高さへ上がり、外へ回って羽根が垂れる。"""
+    """背中の橙の鳥の羽。肩甲骨から肩の高さへ上がって外へ回る前縁（羽の腕）があり、
+    そこから長い風切羽が外ほど長く垂れる。付け根は短い雨覆い羽が 2 段重なって覆う。
+    羽根は薄く、先がとがり、真ん中に羽軸の筋が通る。"""
     m = c.m
     skin = m.skin_fixed("上半身2")
+
+    def feather(root, tip, bend, width, mat, thick=0.0032, shaft=True):
+        path = catmull([root, (root + tip) / 2 + bend, tip], 14)
+        t = np.linspace(0, 1, len(path))
+        prof = np.sin(np.pi * np.clip(t * 0.93 + 0.07, 0, 1)) ** 0.55 * (1 - 0.35 * t)  # 根元から広がり、先でとがる
+        tang = np.gradient(path, axis=0)
+        sides = np.cross(tang, [0, 0, 1.0])
+        sides /= np.linalg.norm(sides, axis=1, keepdims=True) + 1e-9
+        c.strand(path, width * prof + 0.0012, thick, sides, mat, skin=skin)
+        if shaft:  # 羽軸：前と後ろの面に細い筋
+            for dz in (-thick * 2.6, thick * 0.9):
+                m.add("flame_in", tube(path[1:-2] + [0, 0, dz], np.linspace(0.0016, 0.0006, len(path) - 3), n=6), skin)
+
     for sg in (1, -1):
-        root = np.array([sg * 0.040, 0.750, 0.062])
-        # 羽の上の縁（肩から上へ上がって外へ回る弧）から、炎の羽根が外下へ垂れる
-        arch = catmull([root, [sg * 0.10, 0.83, 0.09], [sg * 0.19, 0.86, 0.10], [sg * 0.27, 0.81, 0.09]], 8)
-        for k in range(8):
-            a = arch[min(k, len(arch) - 1)]
-            u = k / 7
-            ln = 0.10 + 0.20 * u                       # 外ほど長く垂れる
-            tip = a + np.array([sg * (0.03 + 0.04 * u), -ln, 0.02 + 0.01 * np.sin(k)])
-            mid = (a + tip) / 2 + np.array([sg * 0.05, 0.02, 0.0])
-            path = catmull([root, (root + a) / 2 + np.array([0, 0.02, 0.02]), a, mid, tip], 30)
-            t = np.linspace(0, 1, len(path))
-            prof = np.sin(np.pi * np.clip(t * 0.92 + 0.10, 0, 1)) ** 0.6
-            tang = np.gradient(path, axis=0)
-            sides = np.cross(tang, [0, 0, 1.0])
-            sides /= np.linalg.norm(sides, axis=1, keepdims=True) + 1e-9
-            c.strand(path, 0.036 * prof + 0.002, 0.006, sides, "flame", skin=skin)
-            inner = path[: int(len(path) * 0.8)] + np.array([0, 0, -0.005])
-            t2 = np.linspace(0, 1, len(inner))
-            c.strand(inner, 0.018 * np.sin(np.pi * np.clip(t2 * 0.92 + 0.10, 0, 1)) ** 0.6 + 0.001, 0.004,
-                     sides[: len(inner)], "flame_in", skin=skin)
+        root = np.array([sg * 0.036, 0.752, 0.060])
+        arch = catmull([root, [sg * 0.10, 0.830, 0.088], [sg * 0.19, 0.858, 0.098], [sg * 0.275, 0.812, 0.090]], 16)
+        n_a = len(arch)
+        # 前縁（羽の腕）：付け根が太く、先へ細る
+        m.add("flame", tube(arch, np.linspace(0.013, 0.0045, n_a), n=14, cap0=True, cap1=True), skin)
+        at = lambda u: arch[int(round(u * (n_a - 1)))]
+        # 風切羽：内側は短くほぼ真下へ、外ほど長く外へ流れる
+        for k in range(11):
+            u = 0.10 + 0.90 * k / 10
+            a = at(u)
+            ln = 0.105 + 0.215 * u ** 1.2
+            tip = a + np.array([sg * (0.012 + 0.075 * u), -ln, 0.016 + 0.004 * np.sin(k * 1.7)])
+            feather(a + [0, -0.004, 0.002 * (k % 2)], tip, np.array([sg * 0.035 * u, 0.012, 0.0]), 0.026 + 0.006 * u, "flame")
+        # 雨覆い羽：前縁から短い羽根が 2 段、風切羽の根元に重なる（明るい色）
+        for row, (ln0, w, dz, mat) in enumerate(((0.085, 0.020, -0.007, "flame_in"), (0.050, 0.017, -0.012, "flame"))):
+            for k in range(12):
+                u = 0.06 + 0.92 * (k + 0.5 * row) / 12
+                a = at(min(u, 1.0))
+                ln = ln0 * (0.75 + 0.6 * u)
+                tip = a + np.array([sg * (0.008 + 0.040 * u), -ln, dz])
+                feather(a + [0, -0.002, dz], tip, np.array([sg * 0.012 * u, 0.006, 0.0]), w, mat, thick=0.0026, shaft=row == 0)
+            # 後ろから見ても根元が覆われるよう、背中側にも 1 段
+        for k in range(10):
+            u = 0.06 + 0.92 * k / 9
+            a = at(u)
+            tip = a + np.array([sg * (0.008 + 0.040 * u), -0.075 * (0.75 + 0.6 * u), 0.030])
+            feather(a + [0, -0.002, 0.012], tip, np.array([sg * 0.012 * u, 0.006, 0.004]), 0.020, "flame_in", thick=0.0026)
