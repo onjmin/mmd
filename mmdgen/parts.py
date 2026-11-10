@@ -117,6 +117,17 @@ def bow(center, span, size, tilt=0.35, facing=(0, 0, -1)):
     for sg in (1, -1):
         ax = side * sg * np.cos(tilt) + up * np.sin(tilt)
         R = rot_axes(ax, np.cross(f, ax), f)
-        meshes.append(ellipsoid(center + ax * span, [span, size, size * 0.35], R, nu=40, nv=24))
+
+        def shape(loc):
+            """輪の形：結び目の側をつまんで細くし、結び目から放射状に布のしわを入れる。"""
+            t = np.clip((loc[:, 0] + span) / (2 * span), 0, 1)  # 0 が結び目、1 が外の端
+            k = np.clip(t / 0.55, 0, 1)
+            pinch = 0.20 + 0.80 * k * k * (3 - 2 * k)
+            out = loc.copy()
+            out[:, 1] *= pinch * (1 + 0.14 * t)
+            ang = np.arctan2(loc[:, 1], loc[:, 0] + span + 1e-9)
+            out[:, 2] = loc[:, 2] * (0.55 + 0.45 * pinch) + size * 0.085 * np.cos(ang * 7) * np.sin(np.pi * t) ** 0.8
+            return out
+        meshes.append(ellipsoid(center + ax * span, [span, size, size * 0.35], R, nu=56, nv=32, shape=shape))
     meshes.append(ellipsoid(center, [size * 0.55] * 3, nu=28, nv=18))
     return meshes

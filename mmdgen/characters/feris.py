@@ -9,7 +9,7 @@ import numpy as np
 from ..body import Character, Head, SIDES, finish
 from ..builder import Model
 from ..textures import TextureSet
-from ..geom import MeshData, catmull, ellipsoid, tube
+from ..geom import MeshData, catmull, ellipsoid, loft, ring, tube, TAU
 from .. import parts, physics
 from ..shoes import Last
 
@@ -31,6 +31,7 @@ def build(out_dir):
                   eye=dict(rx=0.0163, ry=0.0127, top=0.88, iris=0.70, iris_h=1.05, iris_y=-0.06, iris_in=0.05),
                   mouth=dict(rx=0.0100, ry=0.0036, smile=-0.8, fang=True))
     m.material("top", "タンクトップ", TOP, toon=0)
+    m.material("top_trim", "タンクトップの縁", tuple(np.array(TOP) * [0.93, 0.80, 0.55]), toon=0, edge=False)
     m.material("skirt", "スカート", SKIRT, double=True, toon=0)
     m.material("shorts", "インナー", SKIRT, toon=0)
     m.material("en", "胸の炎", EN, edge=False, shadow=False, shade=1.0,
@@ -76,7 +77,18 @@ def build(out_dir):
         r_top, c_top = parts.leg_at(0.296, s)
         m.add("sock", parts.leg_tube(s, 0.300, 0.288, 1.045, steps=4, n=40), c.skin_leg(jp))
 
-    m.add("skirt", parts.skirt(0.600, 0.480, 1.90, pleats=14, depth=0.10), physics.skirt(c, 0.600, 0.480, 1.90))
+    # タンクトップの上下の縁：体に沿う細い帯（リブ編みの縁取り）。肩ひもの付け根にも同じ色の縁
+    angs = np.arange(120) / 120 * TAU
+    for y0, y1 in ((0.7725, 0.7655), (0.6595, 0.6500)):
+        ys = np.linspace(y0, y1, 4)
+        rings = [c.torso_ring_point(y, angs, offset=0.0012 + 0.0006 * np.sin(np.pi * k / 3)) for k, y in enumerate(ys)]
+        m.add("top_trim", loft(rings, cap0=True, cap1=True, centers=[[0, y, parts.torso_r(y)[2]] for y in ys]), torso)
+    # 赤いプリーツスカート：片側へ折った車ひだ（折り山が鋭く立つ）と、腰の帯
+    sk = physics.skirt(c, 0.600, 0.480, 1.90)
+    m.add("skirt", pleated_skirt(0.600, 0.480, 1.90, pleats=18, depth=0.085), sk)
+    # 帯の上の縁は体に付け、下へ向かってスカートの太さまで広げる（上が開いた輪にしない）
+    m.add("skirt", parts.band_around_torso(0.608, 0.594, lambda y: 1.012 + 0.058 * min(1.0, (0.608 - y) / 0.004), steps=8, n=96),
+          m.skin_fixed("下半身"))
     # 胸の「炎」：胸の前面に沿わせた板
     m.add("en", chest_mark(np.array(m.positions), 0.716, 0.064, 0.032), torso)
 
@@ -85,6 +97,28 @@ def build(out_dir):
     wings(c)
     finish(m)
     return m
+
+
+def pleated_skirt(y0, y1, r1_scale, pleats=18, depth=0.085, steps=14):
+    """車ひだのプリーツスカート。parts.skirt と同じ円錐の上に、ゆるく上がって急に落ちる のこぎり形のひだを付ける
+    （折り山がはっきり立つ。サイン波のひだだと波板に見える）。ひだは裾へ行くほど深い。"""
+    rx0, rz0, cz0 = parts.torso_r(y0, 1.06)
+    per = 20
+    n = pleats * per
+    a = np.arange(n) / n * TAU
+    x = (np.arange(n) % per) / per
+    saw = np.where(x < 0.85, x / 0.85, (1 - x) / 0.15) - 0.5
+    rings, centers = [], []
+    for k, y in enumerate(np.linspace(y0, y1, steps)):
+        t = k / (steps - 1)
+        sx = rx0 + (rx0 * r1_scale - rx0) * t
+        sz = rz0 + (rx0 * r1_scale * 0.85 - rz0) * t
+        ctr = np.array([0, y, cz0 + 0.01 * t])
+        sx, sz = parts.clear_legs(y, sx, sz, ctr[2])
+        r = 1 + depth * (0.15 + 0.85 * t) * saw
+        rings.append(ctr + np.stack([sx * r * np.cos(a), np.zeros(n), sz * r * np.sin(a)], 1))
+        centers.append(ctr)
+    return loft(rings, centers=centers)
 
 
 def hair(c):

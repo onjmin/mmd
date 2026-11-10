@@ -68,7 +68,7 @@ def _visible(S_list, Q, d, bias):
     return res
 
 
-def _smooth(val, F, it=3):
+def _smooth(val, F, it=10):
     """となりの頂点とならして、画素のがたつきを消す。"""
     e = np.vstack([F[:, [0, 1]], F[:, [1, 2]], F[:, [2, 0]]])
     e = np.vstack([e, e[:, ::-1]])

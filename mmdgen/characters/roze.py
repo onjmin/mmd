@@ -45,6 +45,8 @@ def build(out_dir):
     c.hair_material("teal", "髪（内側）", TEAL)
     m.material("gold", "金具", GOLD, toon=0, edge=False)
     m.material("gray", "ヘッドセット", (0.32, 0.32, 0.36), toon=0)
+    for k, sp in (("black", 0.20), ("sleeve", 0.20), ("red", 0.28), ("red_d", 0.22), ("gold", 0.60)):  # サテンの布と金具のつや
+        m._mat[k].specular, m._mat[k].power = (sp, sp, sp), 22.0
     m.material("jade", "髪飾り（緑）", (0.40, 0.80, 0.62), toon=0)
 
     # 胴体メッシュ自体で胸元の横長開口・袖ぐり・黒いチャイナ服を切り分ける（2重メッシュの突き抜けや脇の隙間がゼロになる）
@@ -90,6 +92,13 @@ def build(out_dir):
         fx = np.linspace(-0.015, 0.015, 9)
         fy = y - 0.0008 * (1.0 - (fx / 0.015) ** 2)
         m.add("red_trim", tube(c.torso_point_xy(fx, fy, sg=-1, offset=0.0014), 0.0019, n=8), m.skin_fixed("上半身2"))
+        # 両端はひもを巻いた小さな輪、真ん中は結び玉
+        for ex in (-0.0165, 0.0165):
+            ea = np.linspace(0, TAU, 17)
+            loop = c.torso_point_xy(ex + 0.0036 * np.cos(ea), y + 0.0036 * np.sin(ea), sg=-1, offset=0.0016)
+            m.add("red_trim", tube(loop, 0.0014, n=8), m.skin_fixed("上半身2"))
+        knot = c.torso_point_xy(np.array([0.0]), np.array([y - 0.0008]), sg=-1, offset=0.0030)[0]
+        m.add("red_trim", ellipsoid(knot, [0.0036, 0.0033, 0.0030], nu=16, nv=10), m.skin_fixed("上半身2"))
 
     # ベルト（体に沿わせて隙間をなくす）と、雲模様の彫りが入った四角い金バックル
     belt_rings = [c.torso_ring_point(y, ub_angs, offset=0.0028) for y in np.linspace(0.578, 0.560, 4)]
@@ -109,10 +118,16 @@ def build(out_dir):
     for jp, en, s in SIDES:
         arm = c.skin_arm(jp)
         # 大きな袖（肩は出し、手首で絞って5本指の手が綺麗に出るようにする）
-        sleeve, cuff = balloon_sleeve(s)
+        sleeve, cuff, cuff_edges = balloon_sleeve(s)
         m.add("sleeve", sleeve, arm)
         m.add("red", cuff, arm)
+        # 袖口の両端に金の細い縁取り
+        for edge in cuff_edges:
+            m.add("gold", tube(np.vstack([edge, edge[:1]]), 0.0016, n=8), arm)
+        # 袖の付け根を留める赤い輪と、その両側の金の細い輪
         m.add("red", parts.arm_torus(s, 0.085, 0.0205, 0.0035), arm)
+        for t in (0.0805, 0.0895):
+            m.add("gold", parts.arm_torus(s, t, 0.0215, 0.0011), arm)
         # 腰布：腰の横から垂れて脚の外〜後ろを覆い（前は開く）、裾が炎になる。
         # 長い布なので脚には付けず、腰から下げた物理の布にする（走ると後ろへなびき、上げた脚に押されてめくれる）
         mid = 0.50 if s > 0 else np.pi - 0.50  # 0 が外側、π/2 が後ろ
@@ -134,7 +149,8 @@ def build(out_dir):
                                    (0.150, 0.004, "flame", 7)]:
             jag = (lambda a: 0.040 * np.abs(np.sin(a * 5.0)) ** 1.5) if mat == "flame" else None
             grow = lambda t, y0=y0, y1=y1: radius(y0 + (y1 - y0) * t) / parts.leg_at(y0 + (y1 - y0) * t, s)[0]
-            mesh = parts.leg_tube(s, y0, y1, grow, steps=steps, n=26, a0=a0, a1=a1, jag=jag)
+            mesh = parts.leg_tube(s, y0, y1, grow, steps=steps * 3, n=90, a0=a0, a1=a1, jag=jag,
+                                  rmod=lambda a: 1 + 0.022 * np.sin(a * 9 + s) + 0.012 * np.sin(a * 17 + 2 * s))
             # 雷文は 1 マスが帯の高さと同じくらいになるよう横にくり返す
             m.add(mat, mesh, leg, uv=mesh.uv * [{"meander": 7.0, "flame": 3.0}.get(mat, 1.0), 1.0])
         # 足元は炎に包まれて見えない：足首から下を、上へ揺らめく炎の輪で囲む
@@ -191,29 +207,41 @@ def roze_torso_mat(c_pt, base_mat):
     return base_mat
 
 
-def balloon_sleeve(s, t0=0.09, t1=0.258, n=22):
-    """二の腕から始まる風船袖。下へ垂れて膨らみ、手首の赤い袖口で絞って5本指の手を見せる。返り値は (袖, 袖口)。"""
+def balloon_sleeve(s, t0=0.09, t1=0.258, n=72):
+    """二の腕から始まる風船袖。下へ垂れて膨らみ、手首の赤い袖口で絞って 5 本指の手を見せる。
+    付け根と袖口では布を寄せた細かいひだ、ふくらみには垂れた布のゆるいたるみが入る。
+    返り値は (袖, 袖口, 袖口の両端の輪の点列)。"""
     d = parts.arm_point(s, 1.0) - parts.arm_point(s, 0.0)
     d /= np.linalg.norm(d)
     up = np.array([s * np.sin(ARM_ANGLE), np.cos(ARM_ANGLE), 0.0])
     back = np.array([0, 0, 1.0])
-    radii = [0.022, 0.050, 0.078, 0.093, 0.100, 0.096, 0.080, 0.056]
-    ts = np.linspace(t0, t1, len(radii))
+    knots = [0.022, 0.050, 0.078, 0.093, 0.100, 0.096, 0.080, 0.056]
+    nt = 40
+    us = np.linspace(0, 1, nt)
+    radii = catmull(np.stack([np.linspace(0, 1, len(knots)), knots], 1), 12)
+    radii = np.interp(us, radii[:, 0], radii[:, 1])
     sag = lambda r, u: max(0.0, r - 0.018) * (0.78 - 0.55 * (u ** 1.8))  # 袖口へ向かって腕の中心へ戻す
+    a = np.arange(n) / n * TAU
+    rng = np.random.default_rng(3 if s > 0 else 8)
+    ph = rng.uniform(0, TAU, 6)
     rings, centers = [], []
-    for i, (t, r) in enumerate(zip(ts, radii)):
-        u = i / (len(radii) - 1)
-        c = parts.arm_point(s, t) - up * sag(r, u)
-        rings.append(ring(c, back, up, r * 0.92, r, n))
+    for u, r in zip(us, radii):
+        c = parts.arm_point(s, t0 + (t1 - t0) * u) - up * sag(r, u)
+        # 付け根と袖口の寄せひだ（細かく浅い）と、ふくらみのたるみ（ゆるく不規則）
+        gather = np.clip((0.16 - u) / 0.16, 0, 1) + np.clip((u - 0.84) / 0.16, 0, 1) ** 1.3
+        pleat = np.abs(np.sin(a * 9 + 0.7 * np.sin(a * 2 + ph[0])))
+        fold = 0.020 * (np.sin(a * 3 + ph[1] + u * 2.2) + 0.6 * np.sin(a * 5 + ph[2] - u * 3.0)) * np.sin(np.pi * u) ** 1.5
+        k = 1 + gather * (0.075 * pleat - 0.035) + fold
+        rings.append(c + np.outer(np.cos(a) * r * 0.92 * k, back) + np.outer(np.sin(a) * r * k, up))
         centers.append(c)
     sleeve = loft(rings, centers=centers)
     cr, cc = [], []
-    end = parts.arm_point(s, t1) - up * sag(radii[-1], 1.0)
-    for dt, r in [(0.0, 0.056), (0.022, 0.058), (0.044, 0.055)]:
+    end = parts.arm_point(s, t1) - up * sag(knots[-1], 1.0)
+    for dt, r in [(0.0, 0.0565), (0.004, 0.0585), (0.022, 0.0590), (0.040, 0.0575), (0.044, 0.0550)]:
         c = end + d * dt
         cr.append(ring(c, back, up, r * 0.92, r, n))
         cc.append(c)
-    return sleeve, loft(cr, centers=cc)
+    return sleeve, loft(cr, centers=cc), (cr[1], cr[3])
 
 
 def shoulder_mark(s, t=0.045, w=0.014, h=0.008, r=0.0275):

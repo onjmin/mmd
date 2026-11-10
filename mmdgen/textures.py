@@ -113,7 +113,7 @@ class TextureSet:
         return self.save(Image.fromarray(np.stack([v, v, v], -1), "RGB"), name)
 
     # ---- 髪（横は束に沿った繊細な筋、縦は塗りの帯：上が影、下が地色。bake.py が v を決める） ----
-    def hair(self, name, base, tip=None, tip_from=0.72):
+    def hair(self, name, base, tip=None, tip_from=0.72, flecks=None):
         from .bake import ramp
         w = 256
         rng = np.random.default_rng(len(name) + 11)
@@ -127,6 +127,14 @@ class TextureSet:
         lum = float(base @ [0.3, 0.59, 0.11])
         col = ramp(base, np.clip(base * 0.62 + (base - lum) * 0.25, 0, 1) * np.array([0.92, 0.88, 1.0]))
         img = col[:, None, :] * ((1 + stripe) * edge_darken)[None, :, None]
+        if flecks:
+            # 別の色の筋：束の幅のところどころに、やわらかい帯で色を混ぜる（影の所でも色みが残るよう帯の明るさを掛ける）
+            shade = (col @ [0.3, 0.59, 0.11] / max(float(base @ [0.3, 0.59, 0.11]), 1e-6))[:, None, None]
+            for k in range(len(flecks) * 2):
+                fc = np.asarray(flecks[k % len(flecks)], float)
+                c0, sw, a = rng.uniform(0.04, 0.96), rng.uniform(0.005, 0.013), rng.uniform(0.55, 0.85)
+                wgt = (a * np.exp(-((u - c0) / sw) ** 2))[None, :, None]
+                img = img * (1 - wgt) + fc[None, None, :] * np.clip(shade, 0.55, 1.1) * wgt
         return self.save(Image.fromarray((np.clip(img, 0, 1) * 255).astype(np.uint8), "RGB"), name)
 
     # ---- 目：白目、瞳、まつ毛の 3 枚（既製MMDモデル・立ち絵の形状・配色に準拠） ----

@@ -814,12 +814,12 @@ class Character:
 
         # 脚
         for jp, en, s in SIDES:
-            ys = _samples([t[0] for t in LEG], [b[0] for b in leg_bands], 40)
+            ys = _samples([t[0] for t in LEG], [b[0] for b in leg_bands], 90)
             rings, centers = [], []
             for y in ys:
                 r, x, z = (np.interp(-y, [-t[0] for t in LEG], [t[k] for t in LEG]) for k in (1, 2, 3))
                 c = np.array([s * x, y, z])
-                pts = ring(c, [1, 0, 0], [0, 0, 1], r, r * 1.02, 22)
+                pts = ring(c, [1, 0, 0], [0, 0, 1], r, r * 1.02, 64)
                 if leg_cut:
                     # 境目のまわり ±0.04 だけを、外側ほど上へずらす（輪どうしは交差しない）
                     bump = max(0.0, 1 - abs(y - leg_cut[0]) / 0.04)
@@ -1307,10 +1307,10 @@ class Character:
             json.dump(meta, f, ensure_ascii=False, indent=1)
 
     # ---- 髪 ----
-    def hair_material(self, key, name, color, tip=None):
-        """筋の入った髪テクスチャと、上寄りに光の輪が出るスフィアを付けた材質。"""
+    def hair_material(self, key, name, color, tip=None, flecks=None):
+        """筋の入った髪テクスチャと、上寄りに光の輪が出るスフィアを付けた材質。flecks に色を渡すと、その色の筋が混じる。"""
         T = self.tex
-        return self.m.material(key, name, color, tex=T.hair(f"hair_{key}.png", color, tip),
+        return self.m.material(key, name, color, tex=T.hair(f"hair_{key}.png", color, tip, flecks=flecks),
                                sphere=T.hair_sphere(), sphere_mode=2, bake="v", edge_size=0.8)
 
     def hair_surface(self, scale=(1.06, 1.04, 1.07), lift=(0, 0.002, 0.006)):

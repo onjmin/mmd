@@ -76,8 +76,12 @@ def a_skirt(y0, y1, r1_scale, pleats, depth, seed, n=240, steps=16, bulge=0.0):
         x1, z1 = parts.clear_legs(y, x0, z0, c)
         sx.append(x1); sz.append(z1); cz.append(c)
     # 外へ押し出した所だけ持ち上げてから少しならす（細くはしない）
-    sx = np.maximum.accumulate(_smooth(np.maximum.accumulate(np.array(sx)), 3))
-    sz = np.maximum.accumulate(_smooth(np.maximum.accumulate(np.array(sz)), 3))
+    # 腰のいちばん上は元の細さのままにする（ならしたせいで上端まで太ると、腰に棚のような段ができる）
+    def ease(v):
+        raw = np.maximum.accumulate(np.array(v))
+        sm = _smooth(raw, 3)
+        return np.maximum.accumulate(np.maximum(raw[0] + (sm - sm[0]), raw * np.clip(np.arange(len(raw)) / 3.0, 0, 1) ** 0.5))
+    sx, sz = ease(sx), ease(sz)
     a = np.arange(n) / n * TAU
     ph = a * pleats / 2 + 0.25 * np.sin(a * 3 + rng.uniform(0, TAU))  # ひだの間隔を少しずらす
     amp = 1 + 0.35 * np.sin(a * 2 + rng.uniform(0, TAU)) * np.sin(a * 5 + rng.uniform(0, TAU))
@@ -140,9 +144,10 @@ def build(out_dir):
     m.material("skirt", "スカート", COAT, double=True, toon=1)
     m.material("sole", "靴底", (0.26, 0.17, 0.11), toon=0)
     m.material("stitch", "縫い目", (0.36, 0.25, 0.16), toon=0, edge=False)
-    c.hair_material("hair", "髪", HAIR)
+    c.hair_material("hair", "髪", HAIR, flecks=[(0.98, 0.42, 0.50), (1.0, 0.90, 0.30), (0.30, 0.82, 0.86), (0.98, 0.62, 0.25)])
     c.hair_material("tip", "毛先", TIP)
     m.material("bow", "リボン", BOW, toon=0)
+    m.material("bow_tip", "リボンの房", (0.86, 0.48, 0.52), toon=0)
 
     c.build_body(torso_bands=[(1.0, "suit")], leg_bands=[(1.0, "suit")], arm_bands=[(-1.0, "suit")],
                  neck_mat="suit", hand_mat="glove")
@@ -210,22 +215,25 @@ def build(out_dir):
     sk = physics.skirt(c, 0.590, 0.478, 1.80)
     m.add("skirt", a_skirt(0.590, 0.522, 1.55, pleats=22, depth=0.08, seed=12), sk)
     m.add("skirt", a_skirt(0.556, 0.478, 1.80, pleats=28, depth=0.10, seed=13, bulge=0.004), sk)
-    m.add("fur", fur(ring([0, 0.588, 0.006], [1, 0, 0], [0, 0, 1], 0.064, 0.048, 120), 0.009, closed=True, seed=6),
+    wrx, wrz, wcz = parts.torso_r(0.588, 1.06)  # 腰のファーは体に沿わせる（大きいと棚のように張り出す）
+    m.add("fur", fur(ring([0, 0.588, wcz], [1, 0, 0], [0, 0, 1], wrx + 0.005, wrz + 0.005, 120), 0.009, closed=True, seed=6),
           m.skin_fixed("下半身"))
 
     for jp, en, s in SIDES:
         arm = c.skin_arm(jp)
         # 袖：大きくふくらみ、何段もしわが寄って、手首でファーの袖口に絞られる
         m.add("coat", puff_sleeve(s, -0.012, 0.252, seed=21 if s > 0 else 34), arm)
+        ribs = np.interp(np.linspace(0, 1, 14), [0, 0.15, 0.85, 1], [0.0128, 0.0158, 0.0140, 0.0108])
+        m.add("glove", parts.sleeve(s, 0.222, 0.284, ribs, n=64, rmod=lambda a: 1 + 0.045 * np.sin(a * 18)), arm)
         cuff = [parts.arm_point(s, 0.255) + v for v in
                 ring([0, 0, 0], *_perp(parts.arm_point(s, 1.0) - parts.arm_point(s, 0.0)), 0.034, 0.034, 72)]
         m.add("fur", fur(cuff, 0.014, closed=True, seed=7 if s > 0 else 8), arm)
-        # ブーツ：ふくらはぎの下までの太いムクルク。大きなファーの縁と丸いつま先
+        # ブーツ：足首のすぐ上までの短い丈（公式の絵）。履き口に大きなファーの縁、丸く太いつま先
         leg = c.skin_leg(jp)
-        m.add("coat", parts.leg_tube(s, 0.128, 0.030, lambda t: 1.55 + 0.25 * t, steps=22, n=56,
-                                     rmod=lambda a: 1 + 0.03 * np.sin(a * 5)), leg)
-        top = parts.leg_at(0.130, s)[1]
-        m.add("fur", fur(ring(top, [1, 0, 0], [0, 0, 1], 0.050, 0.050, 90), 0.019, closed=True, seed=9 if s > 0 else 10), leg)
+        m.add("coat", parts.leg_tube(s, 0.098, 0.030, lambda t: 1.95 + 0.15 * t, steps=16, n=56,
+                                     rmod=lambda a: 1 + 0.025 * np.sin(a * 5)), leg)
+        top = parts.leg_at(0.100, s)[1]
+        m.add("fur", fur(ring(top, [1, 0, 0], [0, 0, 1], 0.046, 0.046, 90), 0.018, closed=True, seed=9 if s > 0 else 10), leg)
         # 足の部分：丸く太いつま先の木型。厚い靴底、つま先の U 字の縫い目（モカシン縫い）、前に下がるファーの玉
         ank = m.skin_fixed(jp + "足首")
         L = Last(s, wide=1.38, high=1.22, long=1.14, round_toe=1.7, lift=0.0085)
@@ -240,13 +248,6 @@ def build(out_dir):
         aa = np.concatenate([np.full(40, -0.42), np.full(40, np.pi + 0.42)])
         welt = L.line(tt, aa, 0.0006)
         m.add("stitch", tube(np.vstack([welt, welt[:1]]), 0.0013, n=8), ank)
-        for k, dx in enumerate((-0.012, 0.011)):
-            cz = top[2] - 0.062
-            cord = catmull([[top[0] + dx, 0.128, cz + 0.004], [top[0] + dx * 1.3, 0.110, cz - 0.004],
-                            [top[0] + dx * 1.5, 0.092 - 0.006 * k, cz - 0.003]], 10)
-            m.add("stitch", tube(cord, 0.0013, n=8), leg)
-            m.add("fur", ellipsoid(cord[-1] - [0, 0.006, 0], [0.0088, 0.0092, 0.0088], nu=20, nv=12,
-                                   shape=None), leg)
 
     hair(c)
     finish(m)
@@ -292,5 +293,17 @@ def hair(c):
                  0.012 * (1 - 0.6 * t) + 0.003, np.tile([0, 0, 1.0], (n, 1)), mats,
                  skin=c.hair_chain(path, 0.92, 4, 0.020))
     # 頭の上の後ろ寄りに大きなリボン。正面から見ると頭の上の左右に輪が出る（pixiv の全身絵・おんJRPG の立ち絵）
-    for mesh in parts.bow([0.0, 0.992, 0.040], 0.062, 0.038, tilt=0.20, facing=(0.0, 0.55, 1.0)):
+    knot = np.array([0.0, 0.992, 0.040])
+    for mesh in parts.bow(knot, 0.062, 0.038, tilt=0.20, facing=(0.0, 0.55, 1.0)):
         m.add("bow", mesh, m.skin_fixed("頭"))
+    # 結び目から後ろへ垂れる 2 本の帯と、先のピンクの房（公式の絵）
+    for sg, ln in ((1, 1.0), (-1, 0.86)):
+        path = catmull([knot + [sg * 0.004, -0.004, 0.012], knot + [sg * 0.022, -0.030 * ln, 0.040],
+                        knot + [sg * 0.040, -0.074 * ln, 0.056], knot + [sg * 0.050, -0.100 * ln, 0.058]], 12)
+        side = np.tile([1.0, 0, 0.25 * sg], (len(path), 1))
+        wd = np.interp(np.linspace(0, 1, len(path)), [0, 0.2, 1], [0.006, 0.013, 0.016])
+        m.add("bow", tube(path, wd, 0.0022, n=12, side=side, cap0=True), m.skin_fixed("頭"))
+        d = path[-1] - path[-2]
+        d /= np.linalg.norm(d)
+        m.add("bow_tip", tube([path[-1] - d * 0.001, path[-1] + d * 0.012], [0.016, 0.017], 0.0020, n=12,
+                              side=side[:2], cap0=True, cap1=True, rmod=lambda a: 1 + 0.10 * np.sin(a * 2)), m.skin_fixed("頭"))
