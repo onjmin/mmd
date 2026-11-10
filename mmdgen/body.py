@@ -20,23 +20,29 @@ TORSO = [  # y, rx, rz, cz（cz は +Z = 背中側へのずれ）
     # 肩の上は既製の MMD モデル（音街ウナ・うか）に合わせたなで肩：首の付け根から肩先へ 30° ほどでなだらかに下がり、
     # 肩先で丸く腕へ落ちる（首から腕の付け根までの落差が頭の高さの 0.2 ほど）。平らに横へ張るといかり肩になる。
     # 首の付け根の肉（僧帽筋）は首の後ろ寄りに付く
-    (0.840, 0.014, 0.013, 0.004),  # 首の中に隠れる
-    (0.836, 0.030, 0.019, 0.010),
-    (0.831, 0.047, 0.021, 0.011),
-    (0.825, 0.061, 0.023, 0.010),
-    (0.818, 0.072, 0.026, 0.009),
+    # 首の付け根は、胴の上端が首に沿って立ち上がり、首から肩へ内へ反った曲線（僧帽筋）でつながる。
+    # 筒の首と斜面の肩がそのまま交わると、付け根に折れ線が出る
+    # いちばん上の輪（NECK_JOIN）は首の下端と同じ輪で、首はそこから上へ続く（首と胴を交わらせない）
+    (0.847, 0.0182, 0.0176, 0.005),
+    (0.843, 0.0190, 0.0180, 0.0055),
+    (0.839, 0.0218, 0.0188, 0.0065),
+    (0.835, 0.0285, 0.0200, 0.008),
+    (0.830, 0.0420, 0.0214, 0.010),
+    (0.825, 0.0600, 0.0232, 0.010),
+    (0.818, 0.0720, 0.0260, 0.009),
     (0.810, 0.081, 0.030, 0.007),
     (0.801, 0.087, 0.035, 0.005),
     (0.790, 0.088, 0.040, 0.003),
     (0.777, 0.084, 0.044, 0.002),
     (0.760, 0.077, 0.047, 0.001),
     (0.735, 0.071, 0.049, 0.000),
-    (0.700, 0.064, 0.047, 0.000),
-    (0.670, 0.056, 0.042, 0.001),
-    (0.640, 0.049, 0.038, 0.003),
-    (0.618, 0.047, 0.037, 0.004),
-    (0.595, 0.051, 0.039, 0.004),
-    (0.570, 0.062, 0.045, 0.005),
+    # くびれは細くしすぎない（いちばん細い所で肩の関節の幅の 0.7 ほど。既製の MMD モデルはもっと太い）
+    (0.700, 0.066, 0.047, 0.000),
+    (0.670, 0.0615, 0.0445, 0.001),
+    (0.640, 0.0580, 0.0425, 0.003),
+    (0.618, 0.0570, 0.0420, 0.004),
+    (0.595, 0.0590, 0.0428, 0.004),
+    (0.570, 0.0650, 0.0462, 0.005),
     (0.545, 0.072, 0.049, 0.007),
     (0.520, 0.076, 0.050, 0.008),
     (0.495, 0.068, 0.046, 0.008),
@@ -709,6 +715,15 @@ class Character:
             f_mask = front ** 1.2
             dz_total -= 0.0275 * b_scale * prof_y * twin_peak * f_mask
             dx_total += np.sign(x0) * 0.0040 * b_scale * prof_y * np.clip((np.abs(x0) - 0.025) / 0.040, 0.0, 1.0) * f_mask
+        # 鎖骨：首の付け根の中央（胸骨の上のくぼみ）から肩先へ、少し上がりながら伸びる細い山。
+        # 山のすぐ上は浅くくぼみ、中央には小さなくぼみができる
+        ax = np.abs(x0)
+        y_cl = 0.7975 + 0.0125 * np.clip(ax / 0.078, 0.0, 1.2) ** 1.3
+        span = smoothstep(0.004, 0.014, ax) * (1.0 - smoothstep(0.066, 0.082, ax))
+        d_cl = y_arr - y_cl
+        dz_total -= 0.0032 * np.exp(-(d_cl / 0.0040) ** 2) * span * front
+        dz_total += 0.0026 * np.exp(-((d_cl - 0.0090) / 0.0058) ** 2) * span * front
+        dz_total += 0.0030 * np.exp(-(x0 / 0.0075) ** 2 - ((y_arr - 0.8010) / 0.0060) ** 2) * front
         # へその立体的な縦くぼみ（y ≈ 0.606, x = 0, 正面）
         nav_r2 = (x0 / 0.0038) ** 2 + ((y_arr - 0.606) / 0.0068) ** 2
         dz_total += 0.0024 * np.exp(-nav_r2) * (front ** 2)
@@ -770,25 +785,21 @@ class Character:
         nphi = 192
         phis = np.arange(nphi) / nphi * TAU
         top = h.surface(h.h_min, phis)
-        y_top, y_bot = float(top[0, 1]), 0.780
-        r_bot, z_bot = 0.0170, 0.004
-        bot = np.stack([r_bot * np.sin(phis), np.full(nphi, y_bot), z_bot - r_bot * np.cos(phis)], 1)
+        # 首の下端は胴のいちばん上の輪にぴったり重ねる（交わらせると付け根に線が出る）
+        y_bot, rx_bot, rz_bot, z_bot = TORSO[0]
+        y_top = float(top[0, 1])
+        bot = np.stack([rx_bot * np.sin(phis), np.full(nphi, y_bot), z_bot - rz_bot * np.cos(phis)], 1)
         rings = []
         for t in np.linspace(0, 1, 10):
             k = smoothstep(0, 1, t)
             rings.append(bot * (1 - k) + top * k)
-        upper = m.skin_vertical("頭", "首", y_top, NECK_Y)
-        lower = m.skin_auto(["上半身2", "首"])
-
-        def neck_skin(p):
-            a, b = upper(p), lower(p)
-            return [a[i] if p[i, 1] >= NECK_Y else b[i] for i in range(len(p))]
-        m.add(neck_mat, loft(rings, closed=True), neck_skin)
+        # 下端は首の骨だけに付け、胴の上端（同じく首の骨）と離れないようにする
+        m.add(neck_mat, loft(rings, closed=True), m.skin_vertical("頭", "首", y_top, y_bot + 0.004))
 
         # 胴体（胸・谷間・くびれ・へそを一体成形した滑らかな高密度メッシュ：楕円体の継ぎ目溝や2重メッシュの突き抜けが一切出ない）
         chest_ys = np.linspace(0.660, 0.780, 36)
         navel_ys = np.linspace(0.594, 0.618, 9)
-        shoulder_ys = np.linspace(0.760, 0.840, 41)  # 首の付け根〜肩先の丸みを細かく刻む
+        shoulder_ys = np.linspace(0.760, 0.847, 54)  # 首の付け根〜肩先の丸みと鎖骨を細かく刻む
         extra_keys = list(chest_ys) + list(navel_ys) + list(shoulder_ys) + [b[0] for b in torso_bands]
         ys = _samples([t[0] for t in TORSO], extra_keys, 60)
         n_ang = 160
@@ -801,7 +812,14 @@ class Character:
                 r_pts = torso_snap_fn(r_pts, y, angs)
             rings.append(r_pts)
             centers.append(np.array([0.0, y, cz]))
-        self._banded(rings, centers, ys, torso_bands, self.skin_torso(), cap1=True, descending=True, mat_fn=torso_mat_fn)
+        # 首に沿って立ち上がる胴の上端は、首の下半分と同じ骨の割り当てにする（首を曲げても首と離れない）
+        body_skin, neck_base = self.skin_torso(), m.skin_auto(["上半身2", "首"])
+
+        def torso_skin(p):
+            a_, b_ = body_skin(p), neck_base(p)
+            near = (p[:, 1] > 0.826) & (np.hypot(p[:, 0], p[:, 2] - 0.006) < 0.050)
+            return [b_[i] if near[i] else a_[i] for i in range(len(p))]
+        self._banded(rings, centers, ys, torso_bands, torso_skin, cap1=True, descending=True, mat_fn=torso_mat_fn)
 
         # おなかが肌として出ている場合は、へそのくぼみに繊細な陰影デカールを重ねる
         if _band_at(torso_bands, 0.606, descending=True) == "skin":
@@ -845,7 +863,7 @@ class Character:
             self._banded(rings, centers, ts, arm_bands, self.skin_arm(jp), cap0=True, cap1=True, descending=False)
             sh_mat = _band_at(arm_bands, 0.0, descending=False)
             # 肩の丸み（三角筋）：腕の向きに長い楕円体にして、玉ではなく腕へ流れる形にする
-            m.add(sh_mat, ellipsoid(j["腕"] + d * 0.004 + np.array([-s * 0.004, 0.001, 0]), [0.024, 0.019, 0.020],
+            m.add(sh_mat, ellipsoid(j["腕"] + d * 0.004 + np.array([-s * 0.003, 0.0035, 0]), [0.025, 0.0205, 0.0205],
                                     rot_axes(d, v, np.cross(d, v)), nu=48, nv=28),
                   m.skin_auto(["上半身2", jp + "肩", jp + "腕"], {"上半身2": 1.2}))
             self.add_hand(jp, s, hand_mat)
