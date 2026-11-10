@@ -98,30 +98,31 @@ FINGER_SPECS = [
         (0.0276, -0.0090, -0.0322),
         (0.0368, -0.0100, -0.0392),
     ], [(0.0062, 0.0065), (0.0046, 0.0048), (0.0036, 0.0038), (0.0026, 0.0028)]),
+    # 4 本の指は力を抜いた手のように、先へ行くほど掌の側（v の負）へ少しずつ曲げる。まっすぐだと板のような手に見える
     ("人指", "fore", "１２３", [
         (0.0308, -0.0006, -0.0098),
-        (0.0478, -0.0009, -0.0118),
-        (0.0592, -0.0015, -0.0133),
-        (0.0680, -0.0020, -0.0145),
-    ], [(0.0041, 0.0036), (0.0032, 0.0030), (0.0026, 0.0025), (0.0019, 0.0020)]),
+        (0.0477, -0.0024, -0.0118),
+        (0.0588, -0.0052, -0.0133),
+        (0.0670, -0.0085, -0.0145),
+    ], [(0.0041, 0.0037), (0.0033, 0.0031), (0.0027, 0.0026), (0.0022, 0.0022)]),
     ("中指", "middle", "１２３", [
         (0.0324, -0.0002, -0.0012),
-        (0.0512, -0.0004, -0.0014),
-        (0.0638, -0.0009, -0.0015),
-        (0.0732, -0.0014, -0.0016),
-    ], [(0.0043, 0.0037), (0.0034, 0.0031), (0.0027, 0.0026), (0.0020, 0.0021)]),
+        (0.0511, -0.0022, -0.0014),
+        (0.0633, -0.0052, -0.0015),
+        (0.0721, -0.0088, -0.0016),
+    ], [(0.0043, 0.0038), (0.0035, 0.0032), (0.0028, 0.0027), (0.0023, 0.0023)]),
     ("薬指", "third", "１２３", [
         (0.0298, -0.0008,  0.0072),
-        (0.0476, -0.0012,  0.0090),
-        (0.0595, -0.0017,  0.0103),
-        (0.0684, -0.0022,  0.0114),
-    ], [(0.0041, 0.0035), (0.0031, 0.0029), (0.0025, 0.0024), (0.0019, 0.0019)]),
+        (0.0475, -0.0028,  0.0090),
+        (0.0590, -0.0057,  0.0103),
+        (0.0673, -0.0091,  0.0114),
+    ], [(0.0041, 0.0036), (0.0032, 0.0030), (0.0026, 0.0025), (0.0021, 0.0021)]),
     ("小指", "little", "１２３", [
         (0.0260, -0.0018,  0.0145),
-        (0.0410, -0.0023,  0.0176),
-        (0.0500, -0.0028,  0.0198),
-        (0.0578, -0.0033,  0.0215),
-    ], [(0.0036, 0.0031), (0.0027, 0.0026), (0.0022, 0.0022), (0.0017, 0.0017)]),
+        (0.0409, -0.0036,  0.0176),
+        (0.0496, -0.0060,  0.0198),
+        (0.0569, -0.0088,  0.0215),
+    ], [(0.0036, 0.0032), (0.0028, 0.0027), (0.0023, 0.0023), (0.0019, 0.0019)]),
 ]
 
 
@@ -850,35 +851,44 @@ class Character:
             self.add_hand(jp, s, hand_mat)
 
     def add_hand(self, jp, s, mat):
-        """立体的な5本指の手：手首から滑らかにつながる掌（母指球のふくらみ付き）と、関節ごとにウェイトの入った5本の指。"""
+        """立体的な 5 本指の手：手首から段差なくつながる掌（母指球のふくらみ、甲の指の付け根の小さな山）と、
+        指ごとに向きを持った断面の 5 本の指。素手（肌）なら指先に爪を付ける。"""
         m = self.m
         j = joints(s)
         d, up, bk = hand_axes(s)
         w = j["手首"]
 
-        # 1) 掌（手首 u=-0.006 から指の付け根 u=0.032 まで）
-        palm_slices = [
+        # 1) 掌（腕の先の中 u=-0.012 から指の付け根 u=0.032 まで）。腕の先（半径 0.0092）と同じ太さで始めて段を出さない
+        palm_slices = np.array([
             # (u, v_center, z_center, rv, rz_thumb, rz_pinky, thumb_bulge)
-            (-0.006,  0.0000,  0.0000, 0.0106, 0.0108, 0.0108, 0.0000),
-            ( 0.000, -0.0004,  0.0002, 0.0098, 0.0118, 0.0122, 0.0012),
-            ( 0.007, -0.0012,  0.0006, 0.0084, 0.0142, 0.0138, 0.0032),
-            ( 0.015, -0.0014,  0.0015, 0.0074, 0.0148, 0.0152, 0.0028),
-            ( 0.023, -0.0012,  0.0022, 0.0065, 0.0142, 0.0164, 0.0010),
-            ( 0.029, -0.0011,  0.0024, 0.0056, 0.0136, 0.0168, 0.0000),
-            ( 0.032, -0.0011,  0.0024, 0.0042, 0.0126, 0.0156, 0.0000),
-        ]
-        n_ring = 24
+            (-0.012,  0.0000,  0.0000, 0.0084, 0.0086, 0.0086, 0.0000),
+            (-0.003,  0.0000,  0.0000, 0.0091, 0.0096, 0.0096, 0.0000),
+            ( 0.002, -0.0004,  0.0002, 0.0093, 0.0114, 0.0116, 0.0012),
+            ( 0.008, -0.0012,  0.0006, 0.0086, 0.0140, 0.0136, 0.0032),
+            ( 0.015, -0.0014,  0.0015, 0.0075, 0.0148, 0.0152, 0.0028),
+            ( 0.023, -0.0012,  0.0022, 0.0066, 0.0143, 0.0164, 0.0010),
+            ( 0.029, -0.0011,  0.0024, 0.0057, 0.0137, 0.0168, 0.0000),
+            ( 0.0325, -0.0011, 0.0024, 0.0043, 0.0127, 0.0156, 0.0000),
+        ])
+        us = np.concatenate([np.linspace(-0.012, 0.029, 22), [0.031, 0.0325]])
+        cols = [np.interp(us, palm_slices[:, 0], palm_slices[:, k]) for k in range(1, 7)]
+        n_ring = 40
         ang = np.arange(n_ring) / n_ring * TAU
         ca, sa = np.cos(ang), np.sin(ang)  # ca: bk (+Z 小指 / -Z 親指), sa: up (+甲 / -掌)
+        knuckle_z = [pts[0][2] for fn, _, _, pts, _ in FINGER_SPECS if fn != "親指"]
         p_rings, p_centers = [], []
-        for u, vc, zc, rv, rzt, rzp, tbulge in palm_slices:
+        for u, vc, zc, rv, rzt, rzp, tbulge in zip(us, *cols):
             rz = np.where(ca < 0, rzt, rzp)
             # 掌側（sa < 0）かつ親指側（ca < 0）に母指球の柔らかなふくらみを足し、小指側は少し手前に引く
             bulge_v = -tbulge * np.clip(-ca, 0, 1) ** 1.4 * np.clip(-sa, 0, 1)
-            arch_u = -0.0035 * (u / 0.032) * np.clip(ca, 0, 1) ** 1.6
+            arch_u = -0.0035 * (max(u, 0) / 0.032) * np.clip(ca, 0, 1) ** 1.6
+            # 甲側：指の付け根の関節の小さな山と、その間の谷
+            zz = zc + ca * rz
+            kn = sum(np.exp(-((zz - kz) / 0.0030) ** 2) for kz in knuckle_z)
+            knuckle = 0.0009 * (kn - 0.45) * np.clip(sa, 0, 1) * np.exp(-((u - 0.0285) / 0.0050) ** 2)
             c = w + d * u + up * vc + bk * zc
             pts = (c + np.outer(arch_u, d)
-                   + np.outer(sa * rv + bulge_v, up)
+                   + np.outer(sa * rv + bulge_v + knuckle, up)
                    + np.outer(ca * rz, bk))
             p_rings.append(pts)
             p_centers.append(c)
@@ -889,47 +899,83 @@ class Character:
         )
         m.add(mat, loft(p_rings, cap0=True, cap1=True, centers=p_centers), palm_skin)
 
-        # 2) 5本の指（各指の根元を掌の中に少し埋め込み、指先まで滑らかな断面でつなぐ）
-        nf = 14
+        # 2) 5 本の指。断面は指ごとの向き（指の背 n・横 sd）で作る。親指は爪が外上を向くよう 55° ほどねじる
+        nf = 18
         fa = np.arange(nf) / nf * TAU
         fca, fsa = np.cos(fa), np.sin(fa)
+        bare = mat == "skin"
+        if bare and "nail" not in m._mat:
+            nail_c = np.clip(_mix_c(self.skin_color, (1.0, 0.70, 0.72), 0.55), 0, 1)
+            m.material("nail", "爪", nail_c, edge=False)
+            m._mat["nail"].specular, m._mat["nail"].power = (0.22, 0.20, 0.20), 40.0
         for fn, _, nums, pts_spec, rads_spec in FINGER_SPECS:
             pts = [w + d * u + up * v + bk * z for u, v, z in pts_spec]
             f_dir = norm(pts[1] - pts[0])
             root_pt = pts[0] - f_dir * (0.0045 if fn == "親指" else 0.0055)
             chain_pts = [root_pt] + pts
             chain_rads = [rads_spec[0]] + list(rads_spec)
-            # 指のパスを細かく補間し、先端に丸いドームを付ける
+            # 指のパスを細かく補間する（関節でわずかに太らせる）
             sub_pts, sub_rv, sub_rz = [], [], []
             segs = len(chain_pts) - 1
             for k in range(segs):
-                steps = 4 if k < segs - 1 else 5
+                steps = 6
                 for s_i in range(steps):
                     t = s_i / steps
                     sub_pts.append(chain_pts[k] * (1 - t) + chain_pts[k + 1] * t)
                     rv0, rz0 = chain_rads[k]
                     rv1, rz1 = chain_rads[k + 1]
-                    # 関節のわずかな節のメリハリ
-                    knuckle = 1.0 + (0.04 if s_i == 0 and k in (1, 2) else 0.0)
+                    knuckle = 1.0 + (0.05 if s_i == 0 and k in (1, 2) else 0.0)
                     sub_rv.append((rv0 * (1 - t) + rv1 * t) * knuckle)
                     sub_rz.append((rz0 * (1 - t) + rz1 * t) * knuckle)
+            n_body = len(sub_pts)
+            # 指先は丸いドーム
             tip_dir = norm(chain_pts[-1] - chain_pts[-2])
             rv_tip, rz_tip = chain_rads[-1]
-            for tip_t, scale_t in [(0.0, 1.0), (0.45, 0.84), (0.80, 0.56), (1.0, 0.22)]:
-                sub_pts.append(chain_pts[-1] + tip_dir * (rv_tip * 1.15 * tip_t))
-                sub_rv.append(rv_tip * scale_t)
-                sub_rz.append(rz_tip * scale_t)
+            for tip_t in (0.0, 0.30, 0.55, 0.76, 0.91, 0.99):
+                sub_pts.append(chain_pts[-1] + tip_dir * (rv_tip * 1.25 * tip_t))
+                sc = np.sqrt(max(1.0 - tip_t ** 2, 0.0))
+                sub_rv.append(rv_tip * max(sc, 0.10))
+                sub_rz.append(rz_tip * max(sc, 0.10))
+            sub_pts = np.array(sub_pts)
+            # 関節の折れを少しならす（指が節ごとにかくかく曲がって見えないように）
+            sm = sub_pts.copy()
+            sm[1:-1] = 0.25 * sub_pts[:-2] + 0.5 * sub_pts[1:-1] + 0.25 * sub_pts[2:]
+            sub_pts = sm
+            tg = norm(np.gradient(sub_pts, axis=0))
+            n0, sd0 = (norm(0.57 * up - 0.82 * bk), norm(0.82 * up + 0.57 * bk)) if fn == "親指" else (up, bk)
+            nn = norm(n0 - (tg @ n0)[:, None] * tg)
+            sd = sd0 - (tg @ sd0)[:, None] * tg
+            sd = norm(sd - np.einsum("ij,ij->i", sd, nn)[:, None] * nn)
 
             f_rings = []
-            for p_i, rv_i, rz_i in zip(sub_pts, sub_rv, sub_rz):
+            for p_i, rv_i, rz_i, n_i, s_i in zip(sub_pts, sub_rv, sub_rz, nn, sd):
                 # 指の腹側（fsa < 0）を少しふっくらさせ、甲側をすっきりさせる
-                pad = 1.0 + 0.08 * np.clip(-fsa, 0, 1)
-                f_rings.append(p_i + np.outer(fsa * rv_i * pad, up) + np.outer(fca * rz_i, bk))
+                pad = 1.0 + 0.10 * np.clip(-fsa, 0, 1)
+                f_rings.append(p_i + np.outer(fsa * rv_i * pad, n_i) + np.outer(fca * rz_i, s_i))
 
             fbones = [jp + "手首"] + [jp + fn + ch for ch in nums]
             fpairs = [(fbones[k], fbones[k + 1], 0.005) for k in range(len(fbones) - 1)]
             fskin = self.smooth_joints(m.skin_auto(fbones, {jp + "手首": 1.35}), fpairs)
-            m.add(mat, loft(f_rings, cap0=True, cap1=True, centers=sub_pts), fskin)
+            m.add(mat, loft(f_rings, cap0=True, cap1=True, centers=list(sub_pts)), fskin)
+
+            if bare:
+                # 爪：いちばん先の節の背に沿う、丸みのある小さな板。根元と先を丸め、肌からわずかに浮かせる
+                i0, i1 = n_body - 4, len(sub_pts) - 3
+                rows = []
+                for q in np.linspace(0, 1, 9):
+                    x = i0 + (i1 - i0) * q
+                    k0 = int(np.floor(x))
+                    k1 = min(k0 + 1, len(sub_pts) - 1)
+                    f = x - k0
+                    pc = sub_pts[k0] * (1 - f) + sub_pts[k1] * f
+                    rv_q = sub_rv[k0] * (1 - f) + sub_rv[k1] * f
+                    rz_q = sub_rz[k0] * (1 - f) + sub_rz[k1] * f
+                    n_q, s_q = norm(nn[k0] * (1 - f) + nn[k1] * f), norm(sd[k0] * (1 - f) + sd[k1] * f)
+                    half = np.radians(58) * max(np.sqrt(max(1 - (2 * q - 1) ** 2, 0.0)) ** 0.55, 0.22)
+                    ph = np.linspace(-half, half, 9)
+                    rows.append(pc + np.outer(np.cos(ph) * (rv_q + 0.00035), n_q) + np.outer(np.sin(ph) * (rz_q + 0.00035), s_q))
+                cen = [sub_pts[int(round(i0 + (i1 - i0) * q))] for q in np.linspace(0, 1, 9)]
+                m.add("nail", loft(rows, closed=False, centers=cen), fskin)
 
     def _banded(self, rings, centers, keys, bands, skin, cap0=False, cap1=False, descending=True, mat_fn=None):
         """リング列を境目で切って材質ごとに張る（境目のリングと法線は全体メッシュで共有し、材質境界の輪郭線割れを防ぐ）。"""

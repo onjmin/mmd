@@ -8,6 +8,7 @@ from ..builder import Model
 from ..textures import TextureSet
 from ..geom import catmull, ellipsoid, ring, torus, tube, TAU
 from .. import parts, physics
+from ..shoes import Last
 
 SUIT = (0.13, 0.13, 0.16)
 COAT = (0.66, 0.52, 0.38)  # 公式の絵の明るい黄土色
@@ -137,6 +138,8 @@ def build(out_dir):
     m.material("fur", "ファー", FUR, toon=1)
     m.material("glove", "手袋", GLOVE, toon=0)
     m.material("skirt", "スカート", COAT, double=True, toon=1)
+    m.material("sole", "靴底", (0.26, 0.17, 0.11), toon=0)
+    m.material("stitch", "縫い目", (0.36, 0.25, 0.16), toon=0, edge=False)
     c.hair_material("hair", "髪", HAIR)
     c.hair_material("tip", "毛先", TIP)
     m.material("bow", "リボン", BOW, toon=0)
@@ -223,8 +226,27 @@ def build(out_dir):
                                      rmod=lambda a: 1 + 0.03 * np.sin(a * 5)), leg)
         top = parts.leg_at(0.130, s)[1]
         m.add("fur", fur(ring(top, [1, 0, 0], [0, 0, 1], 0.050, 0.050, 90), 0.019, closed=True, seed=9 if s > 0 else 10), leg)
-        m.add("coat", ellipsoid(np.array([joints(s)["足首"][0], 0.032, -0.026]), [0.040, 0.036, 0.076], nu=48, nv=28),
-              m.skin_fixed(jp + "足首"))
+        # 足の部分：丸く太いつま先の木型。厚い靴底、つま先の U 字の縫い目（モカシン縫い）、前に下がるファーの玉
+        ank = m.skin_fixed(jp + "足首")
+        L = Last(s, wide=1.38, high=1.22, long=1.14, round_toe=1.7, lift=0.0085)
+        m.add("coat", L.foot(n=56), ank)
+        m.add("sole", L.sole(thick=0.0085, welt=0.0030, heel=0.0), ank)
+        ts = np.linspace(0.46, 0.90, 26)
+        ph = 1.10 * np.sqrt(np.clip(1 - ((ts - 0.46) / 0.44) ** 2, 0, 1))
+        seam = np.vstack([L.line(ts, np.pi / 2 + ph, 0.0008), L.line(ts[::-1], np.pi / 2 - ph[::-1], 0.0008)])
+        m.add("stitch", tube(seam, 0.0017, n=8, cap0=True, cap1=True), ank)
+        # 靴底との境の縫い目
+        tt = np.concatenate([np.linspace(0.02, 0.98, 40), np.linspace(0.98, 0.02, 40)])
+        aa = np.concatenate([np.full(40, -0.42), np.full(40, np.pi + 0.42)])
+        welt = L.line(tt, aa, 0.0006)
+        m.add("stitch", tube(np.vstack([welt, welt[:1]]), 0.0013, n=8), ank)
+        for k, dx in enumerate((-0.012, 0.011)):
+            cz = top[2] - 0.062
+            cord = catmull([[top[0] + dx, 0.128, cz + 0.004], [top[0] + dx * 1.3, 0.110, cz - 0.004],
+                            [top[0] + dx * 1.5, 0.092 - 0.006 * k, cz - 0.003]], 10)
+            m.add("stitch", tube(cord, 0.0013, n=8), leg)
+            m.add("fur", ellipsoid(cord[-1] - [0, 0.006, 0], [0.0088, 0.0092, 0.0088], nu=20, nv=12,
+                                   shape=None), leg)
 
     hair(c)
     finish(m)

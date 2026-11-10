@@ -11,6 +11,7 @@ from ..builder import Model
 from ..textures import TextureSet
 from ..geom import MeshData, catmull, ellipsoid, tube
 from .. import parts, physics
+from ..shoes import Last
 
 HAT = (0.78, 0.13, 0.12)
 BEAK = (0.96, 0.84, 0.22)
@@ -37,6 +38,9 @@ def build(out_dir):
                toon_tex=c.tex.toon("toon_flat.png", (1, 1, 1)))
     m.material("sock", "靴下", SOCK, toon=0)
     m.material("shoe", "靴", SHOE, toon=0)
+    m.material("sole", "靴底", (0.30, 0.10, 0.09), toon=0)
+    m.material("gold", "金具", (0.92, 0.74, 0.30), toon=0, edge=False)
+    m._mat["shoe"].specular, m._mat["shoe"].power = (0.35, 0.30, 0.30), 28.0  # 革のつや
     c.hair_material("hair", "髪", HAIR)
     m.material("hat", "帽子", HAT, double=True, toon=0)
     m.material("beak", "帽子のくちばし", BEAK, toon=0)
@@ -54,9 +58,23 @@ def build(out_dir):
     for jp, en, s in SIDES:
         m.add("top", tube(strap(c, s * 0.046, 0.772), 0.0055, 0.003, n=12), torso)
     for jp, en, s in SIDES:
-        # 白いハイソックスと赤い靴
-        m.add("shoe", parts.leg_tube(s, 0.060, 0.030, 1.20, steps=3), c.skin_leg(jp))
-        m.add("shoe", parts.foot(s, r=(0.028, 0.028, 0.064), lift=0.002), m.skin_fixed(jp + "足首"))
+        # 白いハイソックスと、赤いストラップシューズ：靴下の足を、履き口の開いた甲革が包む。
+        # 靴底にはかかとの段、履き口には縁取り、甲に金の留め具のストラップ
+        ank = m.skin_fixed(jp + "足首")
+        L = Last(s, lift=0.0065)
+        m.add("sock", L.foot(), ank)
+        rim = lambda t, L=L: L.lift + float(np.interp(t, [0, 0.10, 0.26, 0.58, 0.69, 0.74], [0.041, 0.041, 0.0240, 0.0215, 0.032, 0.09]))
+        upper, loop = L.upper(rim)
+        m.add("shoe", upper, ank)
+        m.add("shoe", tube(np.vstack([loop, loop[:1]]), 0.0014, n=8), ank)
+        m.add("shoe", L.band(0.40), ank)
+        outer = 0.0 if s > 0 else np.pi  # 体の外側
+        bk = L.point(np.array([0.40]), np.array([outer + (0.30 if s > 0 else -0.30)]), 0.0034)[0]
+        m.add("gold", ellipsoid(bk, [0.0016, 0.0034, 0.0034], nu=16, nv=10), ank)
+        m.add("sole", L.sole(), ank)
+        # 靴下のはき口：ひざ下の折り返しの縁
+        r_top, c_top = parts.leg_at(0.296, s)
+        m.add("sock", parts.leg_tube(s, 0.300, 0.288, 1.045, steps=4, n=40), c.skin_leg(jp))
 
     m.add("skirt", parts.skirt(0.600, 0.480, 1.90, pleats=14, depth=0.10), physics.skirt(c, 0.600, 0.480, 1.90))
     # 胸の「炎」：胸の前面に沿わせた板
