@@ -145,11 +145,11 @@ def hair(c):
         e_end = top - 0.09 * abs(th) + 0.020 * np.sin(th * 11) - (0.09 if k == 3 else 0.0)
         c.bang("hair", th, e_end, 0.0315, e_start=1.32, pointy=True, lift_end=1.024, sway=0.14 * th)
     for sg in (1, -1):
-        for th, e_end, w in [(1.08, c.eye["pitch"] - 0.42, 0.0210), (1.24, c.eye["pitch"] - 0.50, 0.0240)]:
+        for th, e_end, w in [(1.17, c.eye["pitch"] - 0.42, 0.0200), (1.30, c.eye["pitch"] - 0.50, 0.0240)]:  # 目尻にかぶらない所まで外へ寄せる
             c.bang("hair", sg * th, e_end, w, thick=0.0055, e_start=1.32, pointy=True, lift_end=1.022, sway=sg * 0.04)
-    for th in np.linspace(1.38, np.pi, 7):
+    for th in np.linspace(1.50, np.pi, 7):
         for sg in ((1, -1) if th < np.pi - 1e-3 else (1,)):
-            y_end = 0.854 - 0.010 * (th - 1.38) / (np.pi - 1.38) + rng.uniform(-0.003, 0.003)
+            y_end = 0.854 - 0.010 * (th - 1.50) / (np.pi - 1.50) + rng.uniform(-0.003, 0.003)
             c.drape("hair", sg * th, y_end, 0.058, thick=0.0070, flare=0.0, pointy=True, wave=0.002,
                     clearance=(0.0, 0.0, 0.0), tuck=0.22)
 

@@ -106,7 +106,8 @@ class TextureSet:
         return self.save(Image.fromarray(np.repeat(col[:, None, :], 8, axis=1), "RGB"), name)
 
     # ---- 髪のつや（加算スフィア：上寄りに天使の輪） ----
-    def hair_sphere(self, name="hair_sphere.png", strength=0.50):
+    def hair_sphere(self, name="hair_sphere.png", strength=0.30):
+        # つやは控えめにする。強いと明るい髪色が白く飛び、顔の横の束が肌の色に見えて目尻を切り取ったように見える
         n = 256
         y, x = np.mgrid[0:n, 0:n] / (n - 1) * 2 - 1
         r = np.sqrt(x * x + y * y)
@@ -154,9 +155,10 @@ class TextureSet:
         px = (n - 1) / (ext[3] - ext[2])  # ry 1 つぶんの画素数
         depth, near_bot = (rows - top) / px, (bot - rows) / px
         # 真っ白にせず、上は淡い桃紫（まつ毛の影）から下へ白っぽくなるグラデーション（既製の萌えキャラの白目）
-        shade = np.clip(1 - depth / 1.30, 0, 1) ** 1.1 * _face.get("white_shade")
-        col = np.array([0.97, 0.95, 0.97]) * (1 - shade[..., None]) + np.array([0.88, 0.81, 0.89]) * shade[..., None]
-        edge = np.clip(1 - near_bot / 0.10, 0, 1) ** 2 * 0.20
+        # 既製モデルの白目は下 2/3 がほぼ真っ白で、上まつ毛の下だけに影が落ちる（全体が灰色だと目が濁って見える）
+        shade = np.clip(1 - depth / 0.85, 0, 1) ** 1.3 * _face.get("white_shade")
+        col = np.array([0.995, 0.985, 0.99]) * (1 - shade[..., None]) + np.array([0.80, 0.76, 0.88]) * shade[..., None]
+        edge = np.clip(1 - near_bot / 0.10, 0, 1) ** 2 * 0.12
         col = col * (1 - edge[..., None]) + np.array([0.70, 0.66, 0.70]) * edge[..., None]
         img = Image.fromarray((np.dstack([np.clip(col, 0, 1), m]) * 255).astype(np.uint8), "RGBA")
         return self.save(img.resize((256, 256), Image.LANCZOS), name)
@@ -188,12 +190,23 @@ class TextureSet:
         # 下の淡い黄色の山
         g = np.sqrt((dx / 0.55) ** 2 + ((dy - 0.80) / 0.42) ** 2)
         col = blend(col, glow, (1 - g) / 0.35 * 0.9)
+        # 上まぶたの影：瞳の上 1/3 を一段暗くして、目に奥行きを出す（既製モデルの瞳はここがはっきり暗い）
+        col = blend(col, dark * 0.72, (-dy - 0.30) / 0.22 * 0.85)
+        # 虹彩の放射の筋：瞳孔のまわりから縁へ伸びる細い明暗
+        th = np.arctan2(dy, dx)
+        rng = np.random.default_rng(7)
+        streak = sum(a * np.cos(th * f + ph) for f, a, ph in zip((23, 37, 61), (0.5, 0.3, 0.2), rng.uniform(0, 6.28, 3)))
+        band = np.clip((r - 0.30) / 0.12, 0, 1) * np.clip((0.78 - r) / 0.10, 0, 1)
+        col = np.clip(col * (1 + 0.10 * streak * band)[..., None], 0, 1)
+        # 下半分の三日月：瞳孔の下を回る明るい帯（光が瞳の中で跳ね返った所）
+        cres = np.exp(-((r - 0.56) / 0.13) ** 2) * np.clip((dy + 0.05) / 0.45, 0, 1)
+        col = blend(col, np.clip(light * 0.5 + glow * 0.5, 0, 1), cres * 0.55)
         # 瞳孔：大きめの暗い楕円、少し上寄り
         ps = _face.get("pupil")
         pr = np.sqrt((dx / (0.28 * ps)) ** 2 + ((dy + 0.12) / (0.32 * ps)) ** 2)
         col = blend(col, pupil_col, (1 - pr) / 0.25)
         # 太い縁
-        col = blend(col, rim_col, (r - 0.74) / 0.16)
+        col = blend(col, rim_col, (r - 0.78) / 0.12)
         # 光の粒（明るい色の小さな丸を 2 つ）
         for cx, cy, rr, c in ((-0.30, -0.05, 0.11, light), (0.10, 0.25, 0.08, np.clip(mid * 0.6 + 0.4, 0, 1))):
             dd = np.sqrt((dx - cx) ** 2 + (dy - cy) ** 2)
@@ -250,7 +263,7 @@ class TextureSet:
         base_th = np.interp(
             s,
             [0.00, 0.08, 0.22, 0.45, sc - 0.05, sc, sc + (1 - sc) * 0.45, 1.00],
-            [0.00, 0.06, 0.14, 0.20, 0.23, 0.24, 0.12, 0.01],
+            [0.00, 0.09, 0.19, 0.27, 0.31, 0.33, 0.13, 0.00],
         ) * _face.get("lash")
         # 内側の白目側への被せ量は目頭・目尻で 0 に絞り、アーチ中央〜外側だけで自然に瞳上部を覆う
         in_env = np.sin(np.clip(s, 0.0, 1.0) * np.pi) ** 0.75
@@ -260,15 +273,17 @@ class TextureSet:
         if part == "upper":
             d.polygon(to_px(band), fill=_rgb(color))
             # 目尻の先：不自然に上へ跳ね上げず、上まぶたのカーブに沿って外〜やや斜め下へ流れる繊細な毛先 2 本
-            tang_ang = -0.12 + np.clip(tilt, -0.3, 0.3) * 0.7
-            for ds, ln, ang_off, w_tip in ((-0.04, 0.21, 0.12, 0.040), (0.04, 0.14, -0.14, 0.028)):
+            # 既製モデル（ミク系）の目尻：太い帯の端が外のやや上へ三角に跳ね、その下に短い毛がもう 1 本出る。
+            # 細い毛先を下へ流すと、目尻が垂れて弱い目に見える
+            tang_ang = 0.20 + np.clip(tilt, -0.3, 0.3) * 0.7
+            for ds, ln, ang_off, w_tip in ((-0.04, 0.42, 0.0, 0.165),):
                 i0 = int(np.argmin(np.abs(s - np.clip(sc + ds, 0.05, 0.95))))
                 root = outer[i0] * [k, 1.0]
                 ang = tang_ang + ang_off
                 dirv = np.array([np.cos(ang), np.sin(ang)])
                 tip = root + dirv * ln
                 side = np.array([-dirv[1], dirv[0]]) * w_tip
-                back = root - dirv * 0.09
+                back = root - dirv * 0.34
                 tri = [(back + side) / [k, 1.0], (back - side) / [k, 1.0], tip / [k, 1.0]]
                 d.polygon(to_px([tuple(p) for p in tri]), fill=_rgb(color))
             return self.save(img.resize((n // S, n // S), Image.LANCZOS), name)
@@ -291,9 +306,9 @@ class TextureSet:
         w = np.sin(t * np.pi) ** 0.8 * (1 - 0.5 * t)
         lo = _offset(lo, np.full(len(lo), 0.015), k)
         for a, b, ww in zip(lo[:-1], lo[1:], w[:-1]):
-            d.line(to_px([tuple(a), tuple(b)]), fill=_rgb(_mix(color, (0.46, 0.26, 0.22), 0.45), int(185 * min(1, 0.25 + ww))),
-                   width=max(1, int(n * 0.007 * ww)))
-        for frac, ln in ((0.14, 0.10), (0.28, 0.08)):
+            d.line(to_px([tuple(a), tuple(b)]), fill=_rgb(_mix(color, (0.46, 0.26, 0.22), 0.35), int(225 * min(1, 0.25 + ww))),
+                   width=max(1, int(n * 0.0095 * ww)))
+        for frac, ln in ():  # 下まつ毛の毛先は描かない（小さな三角が目の下のごみに見える）
             i0 = int(frac * (len(lo) - 1))
             root = lo[i0] * [k, 1.0]
             dirv = np.array([0.40, -0.92])
@@ -313,12 +328,13 @@ class TextureSet:
         for t in ts:
             u = 0.06 + 0.88 * t
             y_c = 0.62 - 0.24 * np.sin(np.pi * 0.86 * t) - tilt * (t - 0.45) * 0.25
-            base_r = (0.22 * (1 - 0.55 * t) ** 0.7 * np.sin(np.clip(t / 0.12, 0, 1) * np.pi / 2) + 0.04 * np.sin(np.pi * t))
+            # 既製モデルの眉は細い線（太いと顔が重く、男っぽく見える）
+            base_r = (0.125 * (1 - 0.50 * t) ** 0.7 * np.sin(np.clip(t / 0.12, 0, 1) * np.pi / 2) + 0.03 * np.sin(np.pi * t))
             tip_taper = np.clip((1.0 - t) / 0.14, 0.12, 1.0) ** 0.6
             th = base_r * tip_taper * thick
             pts_top.append((u * w, (y_c - th * 0.52) * h))
             pts_bot.append((u * w, (y_c + th * 0.48) * h))
-        d.polygon(pts_top + pts_bot[::-1], fill=_rgb(color, 240))
+        d.polygon(pts_top + pts_bot[::-1], fill=_rgb(color, 225))
         return self.save(img.resize((256, 64), Image.LANCZOS), name)
 
     def nose(self, name="nose.png", skin_color=(1.0, 0.86, 0.76)):
@@ -327,7 +343,7 @@ class TextureSet:
         img = Image.new("RGBA", (n, n), (0, 0, 0, 0))
         d = ImageDraw.Draw(img)
         sc = np.asarray(skin_color, float)
-        d.ellipse([n * 0.30, n * 0.42, n * 0.70, n * 0.78], fill=_rgb(sc * np.array([0.98, 0.70, 0.70]), 150))
+        d.ellipse([n * 0.36, n * 0.46, n * 0.64, n * 0.72], fill=_rgb(sc * np.array([1.0, 0.76, 0.74]), 75))
         img = img.filter(ImageFilter.GaussianBlur(n * 0.045))
         return self.save(img.resize((128, 128), Image.LANCZOS), name)
 

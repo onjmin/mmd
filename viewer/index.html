@@ -83,6 +83,7 @@ light.position.set(-0.5, 1, 1);
 scene.add(light);
 const camera = new THREE.PerspectiveCamera(30, W() / innerHeight, 0.1, 500);
 const controls = new OrbitControls(camera, renderer.domElement);
+window.camera = camera;  // コンソールから調べる用
 let mesh = null, physics = null, posing = false, t = 0;
 if (Q.get("outline") !== null) document.getElementById("outline").checked = Q.get("outline") !== "0";
 if (Q.get("edge") !== null) document.getElementById("outlineWidth").value = Q.get("edge");
@@ -132,6 +133,8 @@ function load(name) {
       mt.color.setRGB(Math.min(1, c.r), Math.min(1, c.g), Math.min(1, c.b)).multiplyScalar(1 / LIGHT);
       mt.emissive.setRGB(0, 0, 0);
     });
+    // notoon=1：トゥーン画像（MMD 本体付属の toon_*.bmp など）が手元にない既製モデルを真っ黒にしない
+    if (Q.get("notoon")) m.material.forEach((mt) => { mt.gradientMap = null; mt.needsUpdate = true; });
     updateOutline();
     await ammoReady;
     const d = m.geometry.userData.MMD;

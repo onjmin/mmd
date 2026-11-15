@@ -315,6 +315,7 @@ HEAD_WIDTH = 0.52   # 横の大きさ（表の 1 が頭の高さの何倍か）�
 HEAD_DEPTH = 0.45   # 前後の大きさ（同じく）
 JAW_X = -0.16       # 目の下からあごへ向かって横幅を変える割合（負で広げる＝頬を丸く張らせる）
 JAW_Z = 0.0         # 同じく前後
+CHEEK_PUFF = 0.13   # 鼻〜口の高さの頬の張り（横幅に足す割合）
 NECK_W = 0.40       # あごの下〜首の横の大きさ（顔を広げても首は細いまま）
 NECK_D = 0.40       # 同じく前後
 
@@ -348,8 +349,12 @@ class Head:
 
     def scales(self, h):
         """高さ h での表の 1 あたりの横・前後の長さ。"""
-        t = smoothstep(-0.25, -0.85, self._v(h))
-        return self.width * (1 - self.jaw_x * t) * self.H, HEAD_DEPTH * (1 - JAW_Z * t) * self.H
+        v = self._v(h)
+        t = smoothstep(-0.25, -0.85, v)
+        # 頬のふくらみ：鼻〜口の高さで横へ少し張らせ、頬からあごへの線を外へ丸くする。
+        # 表のままだと頬からあご先まで直線の V 字で、正面の輪郭が五角形に見える（既製の萌え顔は U 字に近い）
+        puff = 1 + CHEEK_PUFF * np.exp(-((v + 0.56) / 0.33) ** 2)
+        return self.width * (1 - self.jaw_x * t) * puff * self.H, HEAD_DEPTH * (1 - JAW_Z * t) * self.H
 
     def _neck(self, h, phi):
         """あごの下・首の所（1）か顔（0）か。あごの下の線はあご先（目の線〜あご先 = -1）から耳の下（-0.6）へ斜めに上がる。"""
@@ -567,7 +572,7 @@ class Character:
         m = model
         m.default_toon_tex = tex.toon("toon_cloth.png", (0.82, 0.80, 0.89))
         # 肌の影は灰色に濁らせず、赤みのある暖色にする
-        skin_shadow = np.clip(np.asarray(skin_color, float) * np.array([0.97, 0.80, 0.77]), 0, 1)
+        skin_shadow = np.clip(np.asarray(skin_color, float) * np.array([0.95, 0.76, 0.73]), 0, 1)
         m.material("skin", "肌", skin_color, toon_tex=tex.toon("toon_skin.png", (1.0, 0.85, 0.80)), shadow_color=skin_shadow)
         m.material("ear_in", "耳の内側", np.asarray(skin_color) * np.array([0.88, 0.72, 0.70]),
                    toon_tex=tex.toon("toon_skin.png", (1.0, 0.85, 0.80)), edge=False)
@@ -772,6 +777,7 @@ class Character:
             return norm(gn * (1.0 - w_sp)[:, None] + sp * w_sp[:, None])
 
         self._head_info = m.add("skin", hmesh, m.skin_fixed("頭"), normals=head_normals)
+        m.head_skin_range = self._head_info[:2]  # 頭の肌の頂点の範囲（_proportion が首の付け根だけ別扱いにする）
         # 耳：アニメの 3D モデル（ref の N4D）に合わせ、目の中ほどから鼻の下までの高さ（h=0.35）、
         # 頭の横の少し後ろに控えめに添える
         for s in (1, -1):
@@ -1142,7 +1148,7 @@ class Character:
             ic_a, ic_b = -s * E["iris_in"] * rx, E["iris_y"] * ry  # 瞳の中心
             iw, ih = E["iris"] * rx, E["iris_h"] * ry              # 瞳の半径
             hl_centers = [(ic_a - 0.27 * iw, ic_b + 0.42 * ih), (ic_a + 0.30 * iw, ic_b - 0.44 * ih)]
-            hl_sizes = [(0.21 * iw * hs, 0.27 * ih * hs), (0.085 * iw * hs, 0.095 * ih * hs)]
+            hl_sizes = [(0.25 * iw * hs, 0.30 * ih * hs), (0.10 * iw * hs, 0.11 * ih * hs)]
             self._hilite[jp] = [(a * s, b) for a, b in hl_centers]
             layers = [
                 ("eye_white", layer("eye_white", 13, 11), 0.0025, "頭"),
@@ -1342,8 +1348,7 @@ class Character:
             sides=sides,
         )
         out = os.path.dirname(self.tex.dir)
-        with open(os.path.join(out, "face.json"), "w", encoding="utf-8") as f:
-            json.dump(meta, f, ensure_ascii=False, indent=1)
+        self.m.face_meta = (os.path.join(out, "face.json"), meta)  # finish() が頭の大きさを直したあとで書き出す
 
     # ---- 髪 ----
     def hair_material(self, key, name, color, tip=None, flecks=None):
@@ -1359,9 +1364,12 @@ class Character:
         c, r = self.hair_surface(scale)
         if keep is None:
             def keep(d):
-                face = (d[:, 2] < -0.22) & (np.abs(d[:, 0]) < 0.78) & (d[:, 1] < 0.48)
+                # 顔の開口は角の丸い形にし、細かい格子で切る。粗い格子で四角く切ると、前髪や横髪のすき間に階段状の切り口が見える
+                # 横はまつ毛の跳ねの先まで開ける（狭いと髪の面が目尻にかぶさり、目が縦に切れて見える）
+                hole = (np.abs(d[:, 0]) / 0.87) ** 4 + (np.clip(d[:, 1] + 0.40, 0, None) / 0.88) ** 4 < 1
+                face = (d[:, 2] < -0.22) & hole
                 return ~face & (d[:, 1] > -0.40)
-        self.m.add(mat, ellipsoid(c, r, nu=36, nv=22, keep=keep), self.m.skin_fixed("頭"))
+        self.m.add(mat, ellipsoid(c, r, nu=120, nv=72, keep=keep), self.m.skin_fixed("頭"))
 
     def strand(self, path, widths, thick, sides, mats, blunt=False, skin=None, wrap=None):
         """髪の束。頭頂〜額はしっかり厚みを保って肌を覆い、毛先近くで薄く絞る。
@@ -1379,7 +1387,7 @@ class Character:
         sides = norm(np.asarray(sides, float) - np.einsum("ij,ij->i", np.asarray(sides, float), tg)[:, None] * tg)
         nn = norm(np.cross(tg, sides))
         # 断面は外側がふくらんだ三日月型にする（nn は頭の内側を向く）
-        seg = 12 if wrap is None else 24
+        seg = 24
         a = np.arange(seg) / seg * TAU
         ca, sa = np.cos(a), np.sin(a)
         if wrap is None:
@@ -1412,9 +1420,12 @@ class Character:
     def bang(self, mat, theta, e_end, width, thick=0.0055, e_start=1.34, pointy=True, scale=(1.065, 1.055, 1.075),
              lift_end=1.065, mats=None, sway=0.0):
         c, r = self.hair_surface(scale)
-        phis = np.linspace(e_start, e_end, 14)
+        # 束は細かく割り、根元から髪の面（hair_cap）の少し外を通す。面の内側から出てくる形だと、浅い角度で面と交わって
+        # 切り口が階段状にがたつく。粗い分割も、となりの束と交わる線をぎざぎざにする
+        phis = np.linspace(e_start, e_end, 40)
         t = (e_start - phis) / (e_start - e_end)
-        k = 0.985 + (lift_end - 0.985) * (t ** 1.7)
+        k0 = min(1.006, lift_end)
+        k = k0 + (lift_end - k0) * (t ** 1.7)
         th = theta + sway * (t ** 2)
         dirs = np.stack([np.sin(th) * np.cos(phis), np.sin(phis), -np.cos(th) * np.cos(phis)], 1)
         path = c + dirs * r * k[:, None]
@@ -1492,9 +1503,102 @@ def _band_at(bands, key, descending=True):
     return cur
 
 
+# 体つきの比率：既製の MMD モデル（ずんだもん 2025、標準体形の N4D）と、身長を 1 にそろえて測って決めた。
+# 腕の付け根の間隔は既製 0.12〜0.13 に対して 0.164、胸・腰・太ももの幅も 15〜40% 広く、頭が小さく肩幅が広く見えていた。
+# 部品はどれも元の寸法で作ってあるので、作り終えた頂点・ボーン・剛体をまとめて動かす：
+# 体は横幅だけを BODY_X 倍に詰め（腕の付け根より外は平行移動なので腕の長さは変わらない）、頭にぶら下がる物は HEAD_GROW 倍にする。
+BODY_X = 0.88
+HEAD_GROW = 1.06
+_HEAD_PIVOT = np.array([0.0, 0.854, 0.0])  # 頭を大きくする中心（あごの下、首の真ん中）
+
+
+def _body_map(p):
+    """体の点の横幅を詰める。首は細いままでよいので、肩の上（y 0.815〜0.845）で元の幅へ戻す。返り値は (点, 横の倍率)。"""
+    p = np.array(p, float)
+    xs = joints(1.0)["腕"][0]
+    k = BODY_X + (1 - BODY_X) * smoothstep(0.815, 0.845, p[..., 1])
+    ax = np.abs(p[..., 0])
+    inner = ax <= xs
+    p[..., 0] = np.sign(p[..., 0]) * np.where(inner, ax * k, xs * k + (ax - xs))
+    return p, np.where(inner, k, 1.0)
+
+
+def _proportion(m):
+    P = np.asarray(m.positions, float)
+    N = np.asarray(m.normals, float)
+    under = np.zeros(len(m.bones), bool)  # 頭とその子孫のボーン
+    under[m.bone["頭"]] = True
+    for i, b in enumerate(m.bones):
+        under[i] = under[i] or (b.parent >= 0 and under[b.parent])
+    f = np.zeros(len(P))  # 頂点が頭の側にどれだけ付いているか
+    for i, w in enumerate(m.weights):
+        if isinstance(w, list):
+            f[i] = sum(wi for b, wi in w if under[m.bone[b]]) / max(sum(wi for _, wi in w), 1e-9)
+        else:
+            f[i] = w[2] * under[m.bone[w[0]]] + ((1 - w[2]) * under[m.bone[w[1]]] if w[1] else 0.0)
+    kh = np.full(len(P), HEAD_GROW)
+    base, count = getattr(m, "head_skin_range", (0, 0))
+    # 頭の肌のうち、体の首の中に隠れる付け根は元の太さのまま（首からはみ出さない）
+    kh[base:base + count] = 1 + (HEAD_GROW - 1) * smoothstep(0.846, 0.858, P[base:base + count, 1])
+    head = _HEAD_PIVOT + (P - _HEAD_PIVOT) * kh[:, None]
+    body, kx = _body_map(P)
+    m.positions = list(head * f[:, None] + body * (1 - f)[:, None])
+    # 横に詰めた面の法線は横成分が立つ
+    kn = 1 + (1 / kx - 1) * (1 - f)
+    m.normals = list(norm(N * np.stack([kn, np.ones(len(P)), np.ones(len(P))], 1)))
+    gain = 1 + (kh - 1) * f
+    for acc in m._morph_acc.values():
+        for vi in acc:
+            acc[vi] = acc[vi] * gain[vi]
+    head_i = m.bone["頭"]
+    for i, b in enumerate(m.bones):
+        if under[i] and i != head_i:
+            b.pos = tuple(_HEAD_PIVOT + (np.asarray(b.pos) - _HEAD_PIVOT) * HEAD_GROW)
+            if not isinstance(b.tail, (str, int)):
+                b.tail = tuple(np.asarray(b.tail) * HEAD_GROW)
+        else:
+            b.pos = tuple(_body_map(b.pos)[0])
+    for name, (a, e) in list(m.seg.items()):
+        if under[m.bone[name]] and m.bone[name] != head_i:
+            m.seg[name] = (_HEAD_PIVOT + (a - _HEAD_PIVOT) * HEAD_GROW, _HEAD_PIVOT + (e - _HEAD_PIVOT) * HEAD_GROW)
+        else:
+            m.seg[name] = (_body_map(a)[0], _body_map(e)[0])
+    on_head = []
+    for rb in m.rigids:
+        h = bool(rb.bone >= 0 and under[rb.bone] and rb.bone != head_i)
+        on_head.append(h)
+        if h:
+            rb.pos = tuple(_HEAD_PIVOT + (np.asarray(rb.pos) - _HEAD_PIVOT) * HEAD_GROW)
+            rb.size = tuple(np.asarray(rb.size) * HEAD_GROW)
+        else:
+            rb.pos = tuple(_body_map(rb.pos)[0])
+    for j in m.joints:
+        if on_head[j.b] or on_head[j.a]:
+            j.pos = tuple(_HEAD_PIVOT + (np.asarray(j.pos) - _HEAD_PIVOT) * HEAD_GROW)
+        else:
+            j.pos = tuple(_body_map(j.pos)[0])
+    if getattr(m, "face_meta", None):
+        # 調整ページが使う顔の寸法（MMD 単位）も同じだけ動かす
+        import json
+        path, meta = m.face_meta
+        s, piv = m.scale, _HEAD_PIVOT * m.scale
+        for sd in meta["sides"].values():
+            sd["p0"] = (piv + (np.asarray(sd["p0"]) - piv) * HEAD_GROW).tolist()
+            sd["hilite"] = [[a * HEAD_GROW, b * HEAD_GROW] for a, b in sd["hilite"]]
+        hd = meta["head"]
+        hd["y0"] = float(piv[1] + (hd["y0"] - piv[1]) * HEAD_GROW)
+        hd["zc"] = float(piv[2] + (hd["zc"] - piv[2]) * HEAD_GROW)
+        hd["H"] *= HEAD_GROW
+        meta["eye"]["rx"] *= HEAD_GROW
+        meta["eye"]["ry"] *= HEAD_GROW
+        with open(path, "w", encoding="utf-8") as fp:
+            json.dump(meta, fp, ensure_ascii=False, indent=1)
+
+
 def finish(model):
-    """塗りを焼き込み、表示枠を整える。"""
+    """体つきの比率を整え、塗りを焼き込み、表示枠を整える。"""
     m = model
+    _proportion(m)
     if m.tex_set is not None:
         _bake.bake(m, face_y=0.846)
     B = m.bone
