@@ -70,7 +70,7 @@ def build(out_dir):
         rim = lambda t, L=L: L.lift + float(np.interp(t, [0, 0.10, 0.26, 0.58, 0.69, 0.74], [0.041, 0.041, 0.0240, 0.0215, 0.032, 0.09]))
         upper, loop = L.upper(rim)
         m.add("shoe", upper, ank)
-        m.add("shoe", tube(np.vstack([loop, loop[:1]]), 0.0014, n=8), ank)
+        m.add("shoe", tube(loop, 0.0014, n=8, closed=True), ank)
         m.add("shoe", L.band(0.40), ank)
         outer = 0.0 if s > 0 else np.pi  # 体の外側
         bk = L.point(np.array([0.40]), np.array([outer + (0.30 if s > 0 else -0.30)]), 0.0034)[0]
@@ -78,7 +78,7 @@ def build(out_dir):
         m.add("sole", L.sole(), ank)
         # 靴下のはき口：ひざ下の折り返しの縁
         r_top, c_top = parts.leg_at(0.296, s)
-        m.add("sock", parts.leg_tube(s, 0.300, 0.288, 1.045, steps=4, n=40), c.skin_leg(jp))
+        m.add("sock", parts.leg_tube(s, 0.300, 0.288, 1.045, steps=4, n=40, cap0=True, cap1=True), c.skin_leg(jp))
 
     # タンクトップの上下の縁：体に沿う細い帯（リブ編みの縁取り）。肩ひもの付け根にも同じ色の縁
     angs = np.arange(120) / 120 * TAU
@@ -87,13 +87,13 @@ def build(out_dir):
         rings = [c.torso_ring_point(y, angs, offset=0.0012 + 0.0006 * np.sin(np.pi * k / 3)) for k, y in enumerate(ys)]
         m.add("top_trim", loft(rings, cap0=True, cap1=True, centers=[[0, y, parts.torso_r(y)[2]] for y in ys]), torso)
     # 赤いプリーツスカート：片側へ折った車ひだ（折り山が鋭く立つ）と、腰の帯
-    sk = physics.skirt(c, 0.600, 0.480, 1.90)
-    m.add("skirt", pleated_skirt(0.600, 0.480, 1.90, pleats=18, depth=0.085), sk)
+    sk = physics.skirt(c, 0.600, 0.475, 1.75)
+    m.add("skirt", pleated_skirt(0.600, 0.475, 1.75, pleats=20, depth=0.085), sk)
     # 帯の上の縁は体に付け、下へ向かってスカートの太さまで広げる（上が開いた輪にしない）
     m.add("skirt", parts.band_around_torso(0.608, 0.594, lambda y: 1.012 + 0.058 * min(1.0, (0.608 - y) / 0.004), steps=8, n=96),
           m.skin_fixed("下半身"))
     # 胸の「炎」：胸の前面に沿わせた板
-    m.add("en", chest_mark(np.array(m.positions), 0.716, 0.064, 0.032), torso)
+    m.add("en", chest_mark(c, 0.716, 0.064, 0.032), torso)
 
     hair(c)
     hat(c)
@@ -102,10 +102,10 @@ def build(out_dir):
     return m
 
 
-def pleated_skirt(y0, y1, r1_scale, pleats=18, depth=0.085, steps=14):
+def pleated_skirt(y0, y1, r1_scale, pleats=20, depth=0.085, steps=14):
     """車ひだのプリーツスカート。parts.skirt と同じ円錐の上に、ゆるく上がって急に落ちる のこぎり形のひだを付ける
     （折り山がはっきり立つ。サイン波のひだだと波板に見える）。ひだは裾へ行くほど深い。"""
-    rx0, rz0, cz0 = parts.torso_r(y0, 1.06)
+    rx0, rz0, cz0 = parts.torso_r(y0, 1.055)
     per = 20
     n = pleats * per
     a = np.arange(n) / n * TAU
@@ -116,12 +116,14 @@ def pleated_skirt(y0, y1, r1_scale, pleats=18, depth=0.085, steps=14):
         t = k / (steps - 1)
         sx = rx0 + (rx0 * r1_scale - rx0) * t
         sz = rz0 + (rx0 * r1_scale * 0.85 - rz0) * t
-        ctr = np.array([0, y, cz0 + 0.01 * t])
+        ctr = np.array([0, y, cz0 + 0.008 * t])
         sx, sz = parts.clear_legs(y, sx, sz, ctr[2])
-        r = 1 + depth * (0.15 + 0.85 * t) * saw
-        rings.append(ctr + np.stack([sx * r * np.cos(a), np.zeros(n), sz * r * np.sin(a)], 1))
+        r = 1 + depth * (t ** 0.75) * saw
+        pts = ctr + np.stack([sx * r * np.cos(a), np.zeros(n), sz * r * np.sin(a)], 1)
+        pts[:, 1] -= 0.004 * t * np.cos(2 * a)
+        rings.append(pts)
         centers.append(ctr)
-    return loft(rings, centers=centers)
+    return loft(rings, cap0=True, centers=centers)
 
 
 def hair(c):
@@ -133,18 +135,18 @@ def hair(c):
     top = c.eye["pitch"] + 0.44
     for k, th in enumerate(np.linspace(-0.78, 0.78, 7)):
         e_end = top - 0.10 * abs(th) + 0.025 * np.sin(th * 11) - (0.10 if k == 3 else 0.0)
-        c.bang("hair", th, e_end, 0.0290, e_start=1.18, pointy=True, lift_end=1.045, sway=0.18 * th)
+        c.bang("hair", th, e_end, 0.0290, e_start=1.32, pointy=True, lift_end=1.045, sway=0.18 * th)
     # 顔の横の髪：目尻の外から頬の横を下り、あごの高さでとがって終わる
     for sg in (1, -1):
         for th, e_end, w in [(1.08, c.eye["pitch"] - 0.42, 0.0200), (1.24, c.eye["pitch"] - 0.50, 0.0230)]:
-            c.bang("hair", sg * th, e_end, w, thick=0.0060, e_start=1.20, pointy=True, lift_end=1.035, sway=sg * 0.05)
+            c.bang("hair", sg * th, e_end, w, thick=0.0060, e_start=1.32, pointy=True, lift_end=1.035, sway=sg * 0.05)
     # ボブ：頭のいちばん広い所からまっすぐ下ろし、毛先へ向かって少し内へ丸める（肩をよけて外へ広げない）。
     # 横はあごの高さ、後ろはうなじの少し下まで。束を重ねて切れ目のない面にする
     for th in np.linspace(1.40, np.pi, 7):
         for sg in ((1, -1) if th < np.pi - 1e-3 else (1,)):
             y_end = 0.856 - 0.010 * (th - 1.40) / (np.pi - 1.40) + rng.uniform(-0.004, 0.004)
             c.drape("hair", sg * th, y_end, 0.050, thick=0.0075, flare=0.0, pointy=True, wave=0.002,
-                    clearance=(0.0, 0.0, 0.0), tuck=0.14)
+                    clearance=(0.0, 0.0, 0.0), tuck=0.20)
 
 
 def hat(c):
@@ -172,10 +174,10 @@ def hat(c):
         nd = np.array([sg * 0.20, 0.80, -0.56])
         nd /= np.linalg.norm(nd)
         m.add("beak_line", ellipsoid(bc + nd * br * 1.0, [0.0022, 0.0010, 0.0016], nu=12, nv=8), m.skin_fixed("頭"))
-    # 帽子の縁：かぶり口をぐるりと回る太い縫い目
-    rim_y = -0.12 * hr[1]
-    rim = ring(hc + [0, rim_y, 0], [1, 0, 0], [0, 0, 1], hr[0] * 0.995, hr[2] * 0.995, 96)
-    m.add("hat_trim", tube(np.vstack([rim, rim[:1]]), 0.0030, n=10), m.skin_fixed("頭"))
+    # 帽子の縁：帽子（phi=0 の下端）に沿う縫い目（くちばし内から始めてはみ出さない）
+    rim = ring(hc, [1, 0, 0], [0, 0, 1], hr[0] * 0.995, hr[2] * 0.995, 84,
+               a0=-np.pi / 2 + 0.42, a1=1.5 * np.pi - 0.42, closed=False)
+    m.add("hat_trim", tube(rim, 0.0020, n=10, cap0=True, cap1=True), m.skin_fixed("頭"))
     for sg in (1, -1):
         d = Head.dir(sg * 0.55, 0.42)
         m.add("hat_eye", ellipsoid(hc + d * hr * 1.0, [0.0045, 0.0055, 0.0045], nu=20, nv=12), m.skin_fixed("頭"))
@@ -211,23 +213,21 @@ def strap(c, x, y0, off=0.0035):
     return catmull(np.vstack([front[::3], [top], back[::-3]]), 120)
 
 
-def chest_mark(pos, y, w, h, off=0.004):
-    """胸の前面に沿う文字の板。各格子点の奥行きを、その近くの体の頂点の一番前に合わせる。"""
-    xs, ys = np.linspace(-w, w, 7), np.linspace(y + h, y - h, 5)
-    near = pos[(np.abs(pos[:, 0]) < w + 0.02) & (np.abs(pos[:, 1] - y) < h + 0.02) & (pos[:, 2] < 0)]
-    verts, uv = [], []
-    for j, yy in enumerate(ys):
-        for i, xx in enumerate(xs):
-            sel = near[np.hypot(near[:, 0] - xx, near[:, 1] - yy) < 0.008]
-            z = sel[:, 2].min() if len(sel) else near[:, 2].min()
-            verts.append([xx, yy, z - off])
-            uv.append([i / (len(xs) - 1), j / (len(ys) - 1)])
+def chest_mark(c, y, w, h, off=0.0010):
+    """胸の前面（谷間・膨らみ込み）に密着させる文字の板。"""
+    xs, ys = np.linspace(-w, w, 13), np.linspace(y + h, y - h, 9)
+    gx, gy = np.meshgrid(xs, ys)
+    verts = c.torso_point_xy(gx, gy, sg=-1, offset=off).reshape(-1, 3)
+    u = np.linspace(0, 1, len(xs))
+    v = np.linspace(0, 1, len(ys))
+    gu, gv = np.meshgrid(u, v)
+    uv = np.stack([gu, gv], -1).reshape(-1, 2)
     faces = []
     for j in range(len(ys) - 1):
         for i in range(len(xs) - 1):
             a = j * len(xs) + i
             faces += [[a, a + 1, a + len(xs)], [a + 1, a + len(xs) + 1, a + len(xs)]]
-    return MeshData(np.array(verts), np.array(faces), np.array(uv, float))
+    return MeshData(verts, np.array(faces), uv)
 
 
 def wings(c):

@@ -5,8 +5,9 @@ import numpy as np
 from ..body import ARM_ANGLE, Character, Head, SIDES, finish, joints, _flat_loft
 from ..builder import Model
 from ..textures import TextureSet
-from ..geom import MeshData, catmull, ellipsoid, loft, ring, rot_axes, torus, tube, TAU
+from ..geom import MeshData, catmull, ellipsoid, loft, ring, rot_axes, smoothstep, torus, tube, TAU
 from .. import parts, physics
+from ..shoes import Last
 
 BLACK = (0.15, 0.14, 0.17)
 RED = (0.78, 0.14, 0.17)
@@ -65,27 +66,27 @@ def build(out_dir):
     m.add("cleavage", _flat_loft(cl_rings, np.array([0.0, 0.0, -1.0]), closed=False), m.skin_fixed("上半身2"))
 
     # 胸元の横長開口の赤いパイピング縁取り（胸と谷間の3D曲面に隙間なく密着させる）
-    kh_a = np.linspace(0, TAU, 49)
+    kh_a = np.linspace(0, TAU, 48, endpoint=False)
     kh_pts = c.torso_point_xy(KH_RX * np.cos(kh_a), KH_YC + KH_RY * np.sin(kh_a), sg=-1, offset=0.0008)
-    m.add("red_trim", tube(kh_pts, 0.0022, n=10), m.skin_fixed("上半身2"))
+    m.add("red_trim", tube(kh_pts, 0.0022, n=10, closed=True), m.skin_fixed("上半身2"))
 
     # 袖ぐりの赤いパイピング縁取り（前〜脇の下〜後ろを1本の滑らかなU字ループでつなぐ）と、赤いアンダーバスト帯
     for s in (1, -1):
-        ah_y_f = np.linspace(0.838, 0.735, 16)
-        ah_y_b = np.linspace(0.735, 0.838, 16)[1:]
+        ah_y_f = np.linspace(0.838, 0.735, 16, endpoint=False)
+        ah_y_b = np.linspace(0.735, 0.838, 16, endpoint=False)
         pts_f = c.torso_point_xy(s * armhole_x(ah_y_f), ah_y_f, sg=-1, offset=0.0008)
         pts_b = c.torso_point_xy(s * armhole_x(ah_y_b), ah_y_b, sg=1, offset=0.0008)
-        m.add("red_trim", tube(np.vstack([pts_f, pts_b]), 0.0023, n=8), torso)
+        m.add("red_trim", tube(np.vstack([pts_f, pts_b]), 0.0023, n=8, closed=True), torso)
     ub_angs = np.arange(64) / 64 * TAU
     ub_rings = [c.torso_ring_point(y, ub_angs, offset=0.0014) for y in (0.661, 0.656, 0.652)]
     m.add("red", loft(ub_rings, cap0=True, cap1=True, centers=[[0, 0.661, 0], [0, 0.656, 0], [0, 0.652, 0]]), torso)
 
-    # 首の下半分を覆う立て襟と、その縁の赤
-    m.add("black", tube([[0, 0.784, 0.008], [0, 0.815, 0.006], [0, 0.846, 0.004]], [0.0255, 0.0225, 0.0218], n=20),
-          m.skin_auto(["上半身2", "首"]))
-    m.add("red_trim", torus([0, 0.846, 0.004], [0, 1, 0], 0.0218, 0.0025), m.skin_fixed("首"))
+    # 首の下半分を覆う立て襟と、その縁の赤（首の肌が貫通しない余裕と上下キャップを持たせる）
+    m.add("black", tube([[0, 0.784, 0.007], [0, 0.815, 0.004], [0, 0.846, 0.002]], [0.0275, 0.0245, 0.0232],
+                        n=24, cap0=True, cap1=True), m.skin_auto(["上半身2", "首"]))
+    m.add("red_trim", torus([0, 0.846, 0.002], [0, 1, 0], 0.0232, 0.0025), m.skin_fixed("首"))
     # 襟の金ボタン、中央の赤い縦ライン、胸の上の赤い飾り結び 2 本
-    m.add("gold", ellipsoid([0, 0.828, -0.0235], [0.0035] * 3, nu=10, nv=6), m.skin_fixed("首"))
+    m.add("gold", ellipsoid([0, 0.828, -0.0252], [0.0035] * 3, nu=10, nv=6), m.skin_fixed("首"))
     v_top_y = np.linspace(0.786, KH_YC + KH_RY, 6)
     m.add("red_trim", tube(c.torso_point_xy(np.zeros_like(v_top_y), v_top_y, sg=-1, offset=0.0012), 0.0015, n=6), m.skin_fixed("上半身2"))
     for y in (0.775, 0.764):
@@ -94,9 +95,9 @@ def build(out_dir):
         m.add("red_trim", tube(c.torso_point_xy(fx, fy, sg=-1, offset=0.0014), 0.0019, n=8), m.skin_fixed("上半身2"))
         # 両端はひもを巻いた小さな輪、真ん中は結び玉
         for ex in (-0.0165, 0.0165):
-            ea = np.linspace(0, TAU, 17)
+            ea = np.linspace(0, TAU, 16, endpoint=False)
             loop = c.torso_point_xy(ex + 0.0036 * np.cos(ea), y + 0.0036 * np.sin(ea), sg=-1, offset=0.0016)
-            m.add("red_trim", tube(loop, 0.0014, n=8), m.skin_fixed("上半身2"))
+            m.add("red_trim", tube(loop, 0.0014, n=8, closed=True), m.skin_fixed("上半身2"))
         knot = c.torso_point_xy(np.array([0.0]), np.array([y - 0.0008]), sg=-1, offset=0.0030)[0]
         m.add("red_trim", ellipsoid(knot, [0.0036, 0.0033, 0.0030], nu=16, nv=10), m.skin_fixed("上半身2"))
 
@@ -108,12 +109,12 @@ def build(out_dir):
     b_front = [c.torso_point_xy(bx, np.full_like(bx, yy), sg=-1, offset=0.0052) for yy in by]
     m.add("buckle", _flat_loft(b_front, np.array([0.0, 0.0, -1.0]), closed=False), m.skin_fixed("下半身"))
     b_rim_pts = np.vstack([
-        c.torso_point_xy(bx, np.full_like(bx, 0.580), sg=-1, offset=0.0046),
-        c.torso_point_xy(np.full_like(by, 0.018), by, sg=-1, offset=0.0046),
-        c.torso_point_xy(bx[::-1], np.full_like(bx, 0.558), sg=-1, offset=0.0046),
-        c.torso_point_xy(np.full_like(by, -0.018), by[::-1], sg=-1, offset=0.0046),
+        c.torso_point_xy(bx[:-1], np.full(len(bx) - 1, 0.580), sg=-1, offset=0.0046),
+        c.torso_point_xy(np.full(len(by) - 1, 0.018), by[:-1], sg=-1, offset=0.0046),
+        c.torso_point_xy(bx[:0:-1], np.full(len(bx) - 1, 0.558), sg=-1, offset=0.0046),
+        c.torso_point_xy(np.full(len(by) - 1, -0.018), by[:0:-1], sg=-1, offset=0.0046),
     ])
-    m.add("gold", tube(b_rim_pts, 0.0014, n=6), m.skin_fixed("下半身"))
+    m.add("gold", tube(b_rim_pts, 0.0014, n=6, closed=True), m.skin_fixed("下半身"))
 
     for jp, en, s in SIDES:
         arm = c.skin_arm(jp)
@@ -123,41 +124,72 @@ def build(out_dir):
         m.add("red", cuff, arm)
         # 袖口の両端に金の細い縁取り
         for edge in cuff_edges:
-            m.add("gold", tube(np.vstack([edge, edge[:1]]), 0.0016, n=8), arm)
+            m.add("gold", tube(edge, 0.0016, n=8, closed=True), arm)
         # 袖の付け根を留める赤い輪と、その両側の金の細い輪
         m.add("red", parts.arm_torus(s, 0.085, 0.0205, 0.0035), arm)
         for t in (0.0805, 0.0895):
             m.add("gold", parts.arm_torus(s, t, 0.0215, 0.0011), arm)
-        # 腰布：腰の横から垂れて脚の外〜後ろを覆い（前は開く）、裾が炎になる。
-        # 長い布なので脚には付けず、腰から下げた物理の布にする（走ると後ろへなびき、上げた脚に押されてめくれる）
-        mid = 0.50 if s > 0 else np.pi - 0.50  # 0 が外側、π/2 が後ろ
-        a0, a1 = mid - 1.60, mid + 1.60
-        radius = lambda y: 0.066 + 0.100 * ((0.57 - y) / 0.57) ** 1.3  # 裾へ向けて広がる
+        # 腰布：ベルトの内側から胴体に沿って始まり、背面中央を重ねてV字の隙間をなくしつつ裾へ広がる物理の布
+        def waist_cloth_pt(u, y, s=s):
+            u_arr, y_arr = np.broadcast_arrays(np.asarray(u, float), np.asarray(y, float))
+            ang_t = -0.68 + u_arr * (np.pi / 2 + 0.08 + 0.68)
+            off_t = 0.0014 + 0.016 * smoothstep(0.561, 0.542, y_arr)
+            pt_t = c.torso_ring_point(y_arr, ang_t, offset=off_t)
+            _, c0 = parts.leg_at(np.clip(y_arr, 0.0, 0.565), 1.0)
+            ang_l = -1.05 + u_arr * (np.pi / 2 + 1.05)
+            rad = 0.078 + 0.094 * (np.maximum(0.570 - y_arr, 0.0) / 0.570) ** 1.25 + 0.002 * np.sin(u_arr * 9 * np.pi + s)
+            u_sm_x = smoothstep(0.55, 1.0, u_arr)
+            u_sm_over = smoothstep(0.72, 1.0, u_arr)
+            u_sm_z = smoothstep(0.40, 1.0, u_arr)
+            cx = c0[0] * (1.0 - u_sm_x) - 0.003 * u_sm_over
+            cz = c0[2] + 0.010 * u_sm_z
+            pt_l = np.stack([
+                cx + rad * np.cos(ang_l),
+                y_arr,
+                cz + rad * np.sin(ang_l),
+            ], -1)
+            w_b = smoothstep(0.561, 0.538, y_arr)
+            if w_b.ndim > 0:
+                w_b = w_b[..., None]
+            pt = pt_t * (1.0 - w_b) + pt_l * w_b
+            pt[..., 0] *= s
+            pt[..., 2] += 0.0008 * s * smoothstep(0.80, 1.0, u_arr)
+            return pt
 
-        def surface(a, y, s=s):
-            r, c0 = parts.leg_at(y, s)
-            return c0 + radius(y) * np.array([np.cos(a), 0.0, np.sin(a)])
+        def surface(u, y, s=s):
+            return waist_cloth_pt(u, y, s)
 
-        def param(p, s=s, a0=a0):
-            cs = np.array([parts.leg_at(y, s)[1] for y in p[:, 1]])
-            a = np.arctan2(p[:, 2] - cs[:, 2], p[:, 0] - cs[:, 0])
-            return a0 + np.mod(a - a0, 2 * np.pi), p[:, 1]
+        def param(p, s=s):
+            ug = np.linspace(0.0, 1.0, 33)
+            yc = np.clip(p[:, 1], 0.004, 0.570)
+            q = waist_cloth_pt(ug[None, :], yc[:, None], s)
+            idx = np.argmin(((q - p[:, None, :]) ** 2).sum(-1), axis=1)
+            return ug[idx], p[:, 1]
 
-        leg = physics.cloth(c, f"腰布{jp}", surface, np.linspace(a0, a1, 7), [0.570, 0.460, 0.350, 0.240, 0.130, 0.020],
+        leg = physics.cloth(c, f"腰布{jp}", surface, np.linspace(0.0, 1.0, 7), [0.570, 0.460, 0.350, 0.240, 0.130, 0.020],
                             "下半身", closed=False, lim=0.5, root_lim=1.4, rscale=0.40)(param)
-        for y0, y1, mat, steps in [(0.570, 0.200, "red_d", 9), (0.200, 0.150, "meander", 2),
-                                   (0.150, 0.004, "flame", 7)]:
-            jag = (lambda a: 0.040 * np.abs(np.sin(a * 5.0)) ** 1.5) if mat == "flame" else None
-            grow = lambda t, y0=y0, y1=y1: radius(y0 + (y1 - y0) * t) / parts.leg_at(y0 + (y1 - y0) * t, s)[0]
-            mesh = parts.leg_tube(s, y0, y1, grow, steps=steps * 3, n=90, a0=a0, a1=a1, jag=jag,
-                                  rmod=lambda a: 1 + 0.022 * np.sin(a * 9 + s) + 0.012 * np.sin(a * 17 + 2 * s))
+        us = np.linspace(0.0, 1.0, 90)
+        red_ys = np.concatenate([[0.570, 0.566], np.linspace(0.561, 0.200, 26)])
+        bands = [(red_ys, "red_d"), (np.linspace(0.200, 0.150, 6), "meander"), (np.linspace(0.150, 0.004, 21), "flame")]
+        for ys_band, mat in bands:
+            rings = []
+            for k, yy in enumerate(ys_band):
+                pts = waist_cloth_pt(us, yy, s)
+                if mat == "flame" and k == len(ys_band) - 1:
+                    pts[:, 1] += 0.040 * np.abs(np.sin(us * np.pi * 5.0)) ** 1.5
+                rings.append(pts)
+            mesh = loft(rings, closed=False, centers=[np.array([0.0, yy, 0.006]) for yy in ys_band])
             # 雷文は 1 マスが帯の高さと同じくらいになるよう横にくり返す
             m.add(mat, mesh, leg, uv=mesh.uv * [{"meander": 7.0, "flame": 3.0}.get(mat, 1.0), 1.0])
-        # 足元は炎に包まれて見えない：足首から下を、上へ揺らめく炎の輪で囲む
-        # 下が太く上へすぼまり、上ほど舌の形に透けて消える炎（靴に見えないよう縁も乱す）
-        mesh = parts.leg_tube(s, 0.000, 0.120, lambda t: 2.1 * (1 - 0.35 * t), steps=5, n=40,
+        # 足元は炎に包まれて見えない：内側をピンクの足芯＋二重の炎で包み、上から見ても足首が切れて見えないようにする
+        ank = m.skin_fixed(jp + "足首")
+        m.add("pink_d", Last(s, lift=0.004).foot(grow=0.002, n=36), ank)
+        m.add("pink_d", parts.leg_tube(s, 0.000, 0.115, lambda t: 1.55 * (1 - 0.30 * t), steps=5, n=36,
+                                       cap0=True, cap1=True,
+                                       jag=lambda a: 0.045 * np.abs(np.sin(a * 4.0 + s + 0.5)) ** 2.6), ank)
+        mesh = parts.leg_tube(s, 0.000, 0.125, lambda t: 2.05 * (1 - 0.35 * t), steps=5, n=40,
                               jag=lambda a: 0.06 * np.abs(np.sin(a * 4.0 + s)) ** 3)
-        m.add("flame", mesh, m.skin_fixed(jp + "足首"), uv=mesh.uv * [3.0, 1.0])
+        m.add("flame", mesh, ank, uv=mesh.uv * [3.0, 1.0])
     # 左の二の腕の「OJ」
     m.add("oj", shoulder_mark(1.0), c.skin_arm("左"))
 
@@ -234,14 +266,15 @@ def balloon_sleeve(s, t0=0.09, t1=0.258, n=72):
         k = 1 + gather * (0.075 * pleat - 0.035) + fold
         rings.append(c + np.outer(np.cos(a) * r * 0.92 * k, back) + np.outer(np.sin(a) * r * k, up))
         centers.append(c)
-    sleeve = loft(rings, centers=centers)
+    sleeve = loft(rings, cap0=True, cap1=True, centers=centers)
     cr, cc = [], []
     end = parts.arm_point(s, t1) - up * sag(knots[-1], 1.0)
-    for dt, r in [(0.0, 0.0565), (0.004, 0.0585), (0.022, 0.0590), (0.040, 0.0575), (0.044, 0.0550)]:
+    for dt, r in [(0.0, 0.0565), (0.004, 0.0585), (0.022, 0.0590), (0.040, 0.0575),
+                  (0.044, 0.0550), (0.041, 0.0490), (0.020, 0.0480)]:
         c = end + d * dt
         cr.append(ring(c, back, up, r * 0.92, r, n))
         cc.append(c)
-    return sleeve, loft(cr, centers=cc), (cr[1], cr[3])
+    return sleeve, loft(cr, cap0=True, cap1=True, centers=cc), (cr[1], cr[3])
 
 
 def shoulder_mark(s, t=0.045, w=0.014, h=0.008, r=0.0275):
@@ -271,11 +304,11 @@ def hair(c):
     # 姫カットの前髪：太い束 7 本を重ねてまっすぐな面にし、眉の高さで切りそろえる（目の高さから決める）
     cut = c.eye["pitch"] + 0.41
     for th in (-0.70, -0.46, -0.23, 0.0, 0.23, 0.46, 0.70):
-        c.bang("hair", th, cut - 0.02 * abs(th), 0.0175, thick=0.0060, e_start=1.25, pointy=False, lift_end=1.032)
+        c.bang("hair", th, cut - 0.02 * abs(th), 0.0175, thick=0.0060, e_start=1.34, pointy=False, lift_end=1.032)
     # 姫毛：目尻より外、頬のすぐ横に左右 2 本ずつ。胸の高さで切れる
     for sg in (1, -1):
         for th, e_end, w in [(1.22, -0.62, 0.0130), (1.36, -0.50, 0.0150)]:
-            c.bang("hair", sg * th, e_end, w, thick=0.0060, e_start=1.25, pointy=True, lift_end=1.030)
+            c.bang("hair", sg * th, e_end, w, thick=0.0060, e_start=1.34, pointy=True, lift_end=1.030)
     # 結い髪から下がる左右の房（公式の立ち絵）：玉の下から顔の横を少し外へ流れ、肩〜胸の高さで細く分かれて終わる黒髪
     hc, hr = c.hair_surface()
     for sg in (1, -1):

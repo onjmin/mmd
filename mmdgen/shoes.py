@@ -63,7 +63,7 @@ class Last:
         # 上半分は丸い甲、下半分は角を丸めた平らな底
         x = np.sign(ca) * np.abs(ca) ** np.where(sa >= 0, 1.0, 0.62) * w
         y = np.where(sa >= 0, yc + (top - yc) * sa, yc + (yc - bot) * np.sign(sa) * np.abs(sa) ** 0.62)
-        return np.stack([self.cx(t) + x, y, self.z(t)], -1)
+        return np.stack([self.cx(t) + x, y, self.z(t) + grow * (1.0 - 2.0 * t)], -1)
 
     def _rings(self, ts, n, grow):
         a = np.arange(n) / n * TAU
@@ -92,8 +92,9 @@ class Last:
             rings.append(pts)
             left.append(pts[0])
             right.append(pts[-1])
-            cen.append(np.array([self.cx(t), (bot + top) / 2, self.z(t)]))
-        mesh = loft(rings, closed=False, centers=cen)
+            cen.append(np.array([self.cx(t), (bot + min(top, max(bot, float(rim(t))))) / 2,
+                                 self.z(t) + grow * (1.0 - 2.0 * t)]))
+        mesh = loft(rings, closed=False, cap0=True, cap1=True, centers=cen)
         open_ = [i for i in range(nt) if np.linalg.norm(left[i] - right[i]) > 1e-4]
         i0, i1 = open_[0], open_[-1]
         loop = left[i0:i1 + 1] + right[i0:i1 + 1][::-1]

@@ -16,7 +16,7 @@ def leg_at(y, s):
     return r, np.array([s * x, y, z])
 
 
-def band_around_torso(y0, y1, grow, a0=0.0, a1=TAU, steps=6, n=36, rmod=None, extra=None):
+def band_around_torso(y0, y1, grow, a0=0.0, a1=TAU, steps=6, n=36, rmod=None, extra=None, cap0=True, cap1=True):
     """胴体を一回り大きく囲む帯。a0..a1 で前を開けられる（角度 -90° が正面）。"""
     closed = abs((a1 - a0) - TAU) < 1e-6
     rings, centers = [], []
@@ -28,18 +28,25 @@ def band_around_torso(y0, y1, grow, a0=0.0, a1=TAU, steps=6, n=36, rmod=None, ex
         c = np.array([0, y, cz])
         rings.append(ring(c, [1, 0, 0], [0, 0, 1], rx, rz, n, a0, a1, closed, rmod))
         centers.append(c)
-    return loft(rings, closed=closed, centers=centers)
+    return loft(rings, closed=closed, cap0=cap0 and closed, cap1=cap1 and closed, centers=centers)
 
 
 def clear_legs(y, sx, sz, cz, margin=0.012):
     """スカートの楕円 (sx, sz, 中心 z=cz) が太ももの断面を丸ごと含むまで広げる。
     外側だけ見ると、斜め前の太ももが楕円を突き抜けてスカートに穴があく。"""
+    if y >= 0.570:
+        return (sx, sz)
     lr, lc = leg_at(y, 1.0)
     th = np.linspace(0, TAU, 48, endpoint=False)
     x = lc[0] + (lr + margin) * np.cos(th)
     z = lc[2] - cz + (lr + margin) * np.sin(th)
     k = np.sqrt(((x / sx) ** 2 + (z / sz) ** 2).max())
-    return (sx * k, sz * k) if k > 1 else (sx, sz)
+    if k <= 1:
+        return (sx, sz)
+    u = float(np.clip((0.570 - y) / 0.030, 0.0, 1.0))
+    fade = u * u * (3.0 - 2.0 * u)
+    k = 1.0 + (k - 1.0) * fade
+    return (sx * k, sz * k)
 
 
 def skirt(y0, y1, r1_scale, pleats=12, depth=0.05, n=72, steps=6, flare_back=0.01):
@@ -82,7 +89,7 @@ def arm_torus(s, t, R, r):
     return torus(arm_point(s, t), arm_dir(s), R, r, n=20, m=8)
 
 
-def leg_tube(s, y0, y1, grow, steps=8, n=22, a0=0.0, a1=TAU, flare=0.0, jag=None, rmod=None):
+def leg_tube(s, y0, y1, grow, steps=8, n=22, a0=0.0, a1=TAU, flare=0.0, jag=None, rmod=None, cap0=False, cap1=False):
     """脚を囲む筒（ブーツ・ズボン）。jag(角度) を渡すと裾をギザギザにする。"""
     closed = abs((a1 - a0) - TAU) < 1e-6
     rings, centers = [], []
@@ -97,7 +104,7 @@ def leg_tube(s, y0, y1, grow, steps=8, n=22, a0=0.0, a1=TAU, flare=0.0, jag=None
             pts[:, 1] += jag(a)
         rings.append(pts)
         centers.append(c)
-    return loft(rings, closed=closed, centers=centers)
+    return loft(rings, closed=closed, cap0=cap0 and closed, cap1=cap1 and closed, centers=centers)
 
 
 def foot(s, r=(0.026, 0.026, 0.062), lift=0.0):

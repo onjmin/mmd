@@ -36,7 +36,9 @@ def body_rigids(c):
     for bone, y0, y1 in [("上半身2", 0.785, 0.700), ("上半身", 0.700, 0.600), ("下半身", 0.600, 0.500)]:
         ym = (y0 + y1) / 2
         rx, rz, cz = torso_r(ym)
-        body[bone] = _rigid(m, bone, bone, BODY, BOX, (rx * 0.85, (y0 - y1) / 2, rz * 0.85), (0, ym, cz))
+        sx = min(rx, 0.062) * 0.72 if bone == "下半身" else rx * 0.85
+        sz = min(rz, 0.044) * 0.72 if bone == "下半身" else rz * 0.85
+        body[bone] = _rigid(m, bone, bone, BODY, BOX, (sx, (y0 - y1) / 2, sz), (0, ym, cz))
     for jp, en, s in SIDES:
         j = joints(s)
         for bone, a, b in [(jp + "足", j["足"], j["ひざ"]), (jp + "ひざ", j["ひざ"], j["足首"])]:
@@ -56,7 +58,8 @@ def chain(c, name, pts, parent, radius, group=HAIR, mass=0.4, lim=0.35, prev_rig
     for i in range(len(pts) - 1):
         bn = f"{name}{i + 1}"
         m.add_bone(bn, bn, pts[i], par, tail=pts[i + 1] - pts[i])
-        rid = _rigid(m, bn, bn, group, SPHERE, (radius * (1 - 0.3 * i / len(pts)), 0, 0), (pts[i] + pts[i + 1]) / 2,
+        ri = radius[i] if np.ndim(radius) > 0 else radius * (1 - 0.3 * i / len(pts))
+        rid = _rigid(m, bn, bn, group, SPHERE, (ri, 0, 0), (pts[i] + pts[i + 1]) / 2,
                      mass=mass, damp=(0.95, 0.99), mode=1)
         a = rigids[-1] if rigids else c.body_rigid[parent]
         li = root_lim if (i == 0 and root_lim is not None) else lim
@@ -117,9 +120,10 @@ def cloth(c, name, surface, us, ys, parent, closed, mass=0.3, lim=0.6, root_lim=
     for k, u in enumerate(us):
         pts = [surface(u, y) for y in ys]
         nb = us[(k + 1) % cols] if (closed or k + 1 < cols) else us[k - 1]
-        # 球は隣の列との間をほぼふさぐ大きさにして、脚が列の間を抜けないようにする
-        r = np.linalg.norm(pts[-1] - surface(nb, ys[-1])) * rscale
-        bones, rids = chain(c, f"{name}{k}_", pts, parent, r, group=SKIRT, mass=mass, lim=lim, root_lim=root_lim)
+        # 球は各段の列間隔に合わせ、根元は腰骨と干渉しないよう控えめに・裾は太ももを塞ぐ大きさにする
+        rs = [np.linalg.norm(surface(u, (ys[i] + ys[i + 1]) / 2) - surface(nb, (ys[i] + ys[i + 1]) / 2))
+              * rscale * (0.70 + 0.30 * i / max(segs - 1, 1)) for i in range(segs)]
+        bones, rids = chain(c, f"{name}{k}_", pts, parent, rs, group=SKIRT, mass=mass, lim=lim, root_lim=root_lim)
         columns.append(bones)
         rigids.append(rids)
     for k in range(cols if closed else cols - 1):

@@ -16,9 +16,10 @@ ROOT = Path(__file__).resolve().parent.parent
 BARE = {"肌", "白目", "瞳", "まつ毛", "眉", "口", "口内", "鼻", "頬"}
 
 
-def render(path, view="face", size=800, yaw=0.0, clay=False, keep=None, frame=None):
-    """yaw は体を上から見て左回りに回す角（度、正面 0・横顔 90）。clay は色を消して陰影だけで凹凸を見る。
-    keep は描く材質名の集合（bare は BARE）。frame=(cx, cy, half) で描く範囲を直接決める。"""
+def render(path, view="face", size=800, yaw=0.0, pitch=0.0, clay=False, keep=None, frame=None, cull=False):
+    """yaw は体を上から見て左回りに回す角（度）、pitch は上から見下ろす角（度、90 で真上）。
+    cull=True で PMX 両面フラグが立っていない面の背面カリングを有効にする。
+    clay は色を消して陰影だけで凹凸を見る。keep は描く材質名の集合。frame=(cx, cy, half) で範囲を決める。"""
     info = read(path)
     P, N, UV = info["positions"].copy(), info["normals"].copy(), info["uvs"]
     H = P[:, 1].max()
@@ -32,9 +33,15 @@ def render(path, view="face", size=800, yaw=0.0, clay=False, keep=None, frame=No
     if yaw:
         a = np.radians(yaw)
         R = np.array([[np.cos(a), 0, np.sin(a)], [0, 1, 0], [-np.sin(a), 0, np.cos(a)]])
-        pivot = np.array([0.0, cy, 0.0])
+        pivot = np.array([cx, cy, 0.0])
         P = (P - pivot) @ R.T + pivot
         N = N @ R.T
+    if pitch:
+        b = np.radians(pitch)
+        Rx = np.array([[1, 0, 0], [0, np.cos(b), np.sin(b)], [0, -np.sin(b), np.cos(b)]])
+        pivot = np.array([cx, cy, 0.0])
+        P = (P - pivot) @ Rx.T + pivot
+        N = N @ Rx.T
     W = Hh = size
     sx = lambda x: ((x - cx) / half * 0.5 + 0.5) * (W - 1)
     sy = lambda y: (0.5 - (y - cy) / half * 0.5) * (Hh - 1)
@@ -65,7 +72,10 @@ def render(path, view="face", size=800, yaw=0.0, clay=False, keep=None, frame=No
         flat = "白目" in m["name"] or "瞳" in m["name"] or "まつ" in m["name"] or "眉" in m["name"] or "口" in m["name"] \
             or "鼻" in m["name"] or "頬" in m["name"]
         flat = flat and not clay
+        double_sided = bool(m.get("flags", 0) & 1)
         for f in idx:
+            if cull and not double_sided and np.cross(P[f[1]] - P[f[0]], P[f[2]] - P[f[0]])[2] > 0:
+                continue
             xs, ys = X[f], Y[f]
             x0, x1 = int(max(0, np.floor(xs.min()))), int(min(W - 1, np.ceil(xs.max())))
             y0, y1 = int(max(0, np.floor(ys.min()))), int(min(Hh - 1, np.ceil(ys.max())))

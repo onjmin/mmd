@@ -41,12 +41,12 @@ TORSO = [  # y, rx, rz, cz（cz は +Z = 背中側へのずれ）
     (0.670, 0.0615, 0.0445, 0.001),
     (0.640, 0.0580, 0.0425, 0.003),
     (0.618, 0.0570, 0.0420, 0.004),
-    (0.595, 0.0590, 0.0428, 0.004),
-    (0.570, 0.0650, 0.0462, 0.005),
-    (0.545, 0.072, 0.049, 0.007),
-    (0.520, 0.076, 0.050, 0.008),
-    (0.495, 0.068, 0.046, 0.008),
-    (0.475, 0.042, 0.032, 0.006),
+    (0.595, 0.0605, 0.0435, 0.004),
+    (0.570, 0.0695, 0.0475, 0.005),
+    (0.545, 0.082, 0.052, 0.007),
+    (0.520, 0.088, 0.053, 0.008),
+    (0.495, 0.074, 0.047, 0.008),
+    (0.475, 0.044, 0.033, 0.006),
 ]
 
 # くびれ〜腰回りの輪郭に折れ目が出ないよう、Catmull-Rom スプラインで滑らかに補間した断面表を作る
@@ -68,8 +68,8 @@ def torso_profile(y, grow=1.0):
 LEG = [  # y, 半径, x, z
     # 既製の MMD モデル（音街ウナ）の脚は太ももで脚の長さの 0.065〜0.08、ひざ・ふくらはぎで 0.055〜0.06。
     # それより少しだけ肉付きを残して細くする
-    (0.565, 0.044, 0.040, 0.004),
-    (0.525, 0.053, 0.047, 0.004),
+    (0.565, 0.036, 0.036, 0.005),
+    (0.525, 0.051, 0.046, 0.004),
     (0.450, 0.047, 0.047, 0.000),
     (0.370, 0.0385, 0.046, -0.002),
     (0.300, 0.0305, 0.045, -0.004),
@@ -839,13 +839,21 @@ class Character:
                 c = np.array([s * x, y, z])
                 pts = ring(c, [1, 0, 0], [0, 0, 1], r, r * 1.02, 64)
                 if leg_cut:
-                    # 境目のまわり ±0.04 だけを、外側ほど上へずらす（輪どうしは交差しない）
-                    bump = max(0.0, 1 - abs(y - leg_cut[0]) / 0.04)
+                    # 境目のまわり ±0.022 だけを、外側ほど上へずらす（輪どうしは交差しない）
+                    bump = max(0.0, 1 - abs(y - leg_cut[0]) / 0.022)
                     side = np.clip((pts[:, 0] - c[0]) * s / r, 0, 1) ** 0.7
-                    pts[:, 1] += leg_cut[1] * bump * side
+                    dy = leg_cut[1] * bump * side
+                    y_new = np.minimum(y + dy, LEG[0][0])
+                    r_new = np.interp(-y_new, [-t[0] for t in LEG], [t[1] for t in LEG])
+                    x_new = s * np.interp(-y_new, [-t[0] for t in LEG], [t[2] for t in LEG])
+                    z_new = np.interp(-y_new, [-t[0] for t in LEG], [t[3] for t in LEG])
+                    scale_r = r_new / r
+                    pts[:, 0] = x_new + (pts[:, 0] - c[0]) * scale_r
+                    pts[:, 1] = y + dy
+                    pts[:, 2] = z_new + (pts[:, 2] - c[2]) * scale_r
                 rings.append(pts)
                 centers.append(c)
-            self._banded(rings, centers, ys, leg_bands, self.skin_leg(jp), cap1=True, descending=True)
+            self._banded(rings, centers, ys, leg_bands, self.skin_leg(jp), cap0=True, cap1=True, descending=True)
 
         # 腕と手
         for jp, en, s in SIDES:
@@ -879,8 +887,8 @@ class Character:
         # 1) 掌（腕の先の中 u=-0.012 から指の付け根 u=0.032 まで）。腕の先（半径 0.0092）と同じ太さで始めて段を出さない
         palm_slices = np.array([
             # (u, v_center, z_center, rv, rz_thumb, rz_pinky, thumb_bulge)
-            (-0.012,  0.0000,  0.0000, 0.0084, 0.0086, 0.0086, 0.0000),
-            (-0.003,  0.0000,  0.0000, 0.0091, 0.0096, 0.0096, 0.0000),
+            (-0.012,  0.0000,  0.0000, 0.0091, 0.0092, 0.0092, 0.0000),
+            (-0.003,  0.0000,  0.0000, 0.0092, 0.0099, 0.0099, 0.0000),
             ( 0.002, -0.0004,  0.0002, 0.0093, 0.0114, 0.0116, 0.0012),
             ( 0.008, -0.0012,  0.0006, 0.0086, 0.0140, 0.0136, 0.0032),
             ( 0.015, -0.0014,  0.0015, 0.0075, 0.0148, 0.0152, 0.0028),
@@ -1331,10 +1339,10 @@ class Character:
         return self.m.material(key, name, color, tex=T.hair(f"hair_{key}.png", color, tip, flecks=flecks),
                                sphere=T.hair_sphere(), sphere_mode=2, bake="v", edge_size=0.8)
 
-    def hair_surface(self, scale=(1.06, 1.04, 1.07), lift=(0, 0.002, 0.006)):
+    def hair_surface(self, scale=(1.065, 1.055, 1.075), lift=(0, 0.002, 0.006)):
         return self.head.c + np.array(lift), self.head.r * np.array(scale)
 
-    def hair_cap(self, mat, keep=None, scale=(1.06, 1.04, 1.07)):
+    def hair_cap(self, mat, keep=None, scale=(1.065, 1.055, 1.075)):
         c, r = self.hair_surface(scale)
         if keep is None:
             def keep(d):
@@ -1351,8 +1359,9 @@ class Character:
         n = len(path)
         t_along = np.linspace(0.0, 1.0, n)
         widths = np.broadcast_to(np.asarray(widths, float), (n,))
-        taper = 1.0 - 0.55 * (np.clip((t_along - 0.70) / 0.30, 0.0, 1.0) ** 1.6)
-        thick_arr = np.broadcast_to(np.asarray(thick, float), (n,)) * taper
+        root_taper = 0.08 + 0.92 * smoothstep(0.0, 0.22, t_along)
+        tip_taper = 1.0 - 0.72 * (np.clip((t_along - 0.65) / 0.35, 0.0, 1.0) ** 1.5)
+        thick_arr = np.broadcast_to(np.asarray(thick, float), (n,)) * (root_taper * tip_taper)
         tg = norm(np.gradient(path, axis=0))
         sides = norm(np.asarray(sides, float) - np.einsum("ij,ij->i", np.asarray(sides, float), tg)[:, None] * tg)
         nn = norm(np.cross(tg, sides))
@@ -1387,25 +1396,25 @@ class Character:
                     self.m.add(mats[start], mesh, skin)
                 start = i
 
-    def bang(self, mat, theta, e_end, width, thick=0.0055, e_start=1.25, pointy=True, scale=(1.06, 1.04, 1.07),
+    def bang(self, mat, theta, e_end, width, thick=0.0055, e_start=1.34, pointy=True, scale=(1.065, 1.055, 1.075),
              lift_end=1.065, mats=None, sway=0.0):
         c, r = self.hair_surface(scale)
         phis = np.linspace(e_start, e_end, 14)
         t = (e_start - phis) / (e_start - e_end)
-        k = 1.0 + (lift_end - 1.0) * (t ** 2)
+        k = 0.985 + (lift_end - 0.985) * (t ** 1.7)
         th = theta + sway * (t ** 2)
         dirs = np.stack([np.sin(th) * np.cos(phis), np.sin(phis), -np.cos(th) * np.cos(phis)], 1)
         path = c + dirs * r * k[:, None]
         sides = np.stack([np.cos(th), np.zeros_like(th), np.sin(th)], 1)
         if pointy:
-            w = width * (1 - 0.85 * (t ** 2.6))
+            w = width * (1 - 0.94 * (t ** 2.3))
         else:
             # 姫カット・ぱっつんでも毛先 40% をすっと絞って束ごとの繊細なすき間（眉や額がのぞく軽やかな抜け感）を作る
             w = width * (1 - 0.62 * np.clip((t - 0.58) / 0.42, 0.0, 1.0) ** 1.4)
         self.strand(path, w, thick, sides, mats or mat, blunt=False)
 
-    def drape(self, mat, theta, y_end, width, thick=0.007, e0=1.05, flare=0.10, pointy=True,
-              scale=(1.06, 1.04, 1.07), mats_fn=None, clearance=(0.100, 0.090, 0.074), wave=0.0, bones=0, splay=0.0,
+    def drape(self, mat, theta, y_end, width, thick=0.007, e0=1.22, flare=0.10, pointy=True,
+              scale=(1.065, 1.055, 1.075), mats_fn=None, clearance=(0.100, 0.090, 0.074), wave=0.0, bones=0, splay=0.0,
               tuck=0.0):
         """頭から垂れ下がる髪の束。体（肩・胸）をよけて外側に広がる。bones を渡すと物理で揺れる。
         splay はあごの高さから下へ行くほど外へ開く量（姫毛を顔から離して広げる）。
@@ -1417,7 +1426,8 @@ class Character:
         # 頭の面に沿って e0 の高さから頭の真ん中の高さまで下りる（e0 が真ん中より下なら、そこから下へだけ下ろす）
         for phi in np.linspace(e0, 0.0, 8, endpoint=False) if e0 > 0 else [e0]:
             d = np.array([np.sin(theta) * np.cos(phi), np.sin(phi), -np.cos(theta) * np.cos(phi)])
-            pts.append(c + d * r)
+            r_k = 0.985 + 0.015 * smoothstep(e0, 0.0, phi) if e0 > 0 else 1.0
+            pts.append(c + d * r * r_k)
         req = 1.0 / np.sqrt((np.sin(theta) / r[0]) ** 2 + (np.cos(theta) / r[2]) ** 2)
         b = clearance[1] if np.cos(theta) > 0 else clearance[2]
         rcl = 1.0 / np.sqrt((np.sin(theta) / max(clearance[0], 1e-6)) ** 2 + (np.cos(theta) / max(b, 1e-6)) ** 2)
@@ -1431,8 +1441,8 @@ class Character:
         path = catmull(pts, 30)
         n = len(path)
         tt = np.linspace(0, 1, n)
-        w = width * (1 - 0.9 * smoothstep(0.75, 1.0, tt)) if pointy else np.full(n, width)
-        w = w * (0.75 + 0.25 * smoothstep(0.0, 0.25, tt))
+        w = width * (1 - 0.94 * smoothstep(0.70, 1.0, tt)) if pointy else np.full(n, width)
+        w = w * (0.55 + 0.45 * smoothstep(0.0, 0.22, tt))
         sides = np.tile([np.cos(theta), 0.0, np.sin(theta)], (n, 1))
         mats = [mats_fn(p) for p in path] if mats_fn else mat
         self.strand(path, w, thick, sides, mats, blunt=not pointy, wrap=c,

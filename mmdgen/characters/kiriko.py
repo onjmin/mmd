@@ -3,10 +3,9 @@
 import numpy as np
 
 from ..body import ARM_ANGLE, Character, SIDES, arm_dir, finish, joints
-from ..geom import loft, smoothstep
 from ..builder import Model
 from ..textures import TextureSet
-from ..geom import catmull, ellipsoid, ring, torus, tube, TAU
+from ..geom import MeshData, catmull, ellipsoid, loft, ring, smoothstep, torus, tube, TAU
 from .. import parts, physics
 from ..shoes import Last
 
@@ -34,14 +33,13 @@ def fur(path, r, closed=False, seed=0, n=18, rv=None, side=None):
     """ファーの縁：毛足のふくらみが不規則に揺らぐ太い管（同じ玉が並んで数珠に見えないようにする）。
     rv を渡すと断面を楕円にする（side 方向が r、直交方向が rv）。"""
     path = np.asarray(path, float)
-    if closed:
-        path = np.vstack([path, path[:1]])
-    seg = np.linalg.norm(np.diff(path, axis=0), axis=1)
+    pts = np.vstack([path, path[:1]]) if closed else path
+    seg = np.linalg.norm(np.diff(pts, axis=0), axis=1)
     t = np.concatenate([[0], np.cumsum(seg)])
     rng = np.random.default_rng(seed)
     if closed:  # 継ぎ目でずれないよう、一周でちょうど繰り返す凹凸にする
         k = max(3, int(round(t[-1] / (r * 3.0))))
-        x = t / t[-1] * TAU
+        x = t[:-1] / t[-1] * TAU
         bump = 1 + 0.07 * (np.sin(x * k + rng.uniform(0, TAU)) + 0.6 * np.sin(x * (k + 3) + rng.uniform(0, TAU))
                            + 0.4 * np.sin(x * (2 * k - 1) + rng.uniform(0, TAU))) / 2.0
         taper = 1.0
@@ -51,7 +49,7 @@ def fur(path, r, closed=False, seed=0, n=18, rv=None, side=None):
     rr = r * bump * taper
     p1, p2 = rng.uniform(0, TAU, 2)
     return tube(path, rr, None if rv is None else rr * (rv / r), n=n, side=side, cap0=not closed, cap1=not closed,
-                rmod=lambda a: 1 + 0.035 * np.sin(a * 5 + p1) + 0.02 * np.sin(a * 8 + p2))
+                closed=closed, rmod=lambda a: 1 + 0.035 * np.sin(a * 5 + p1) + 0.02 * np.sin(a * 8 + p2))
 
 
 def _smooth(y, k=5):
@@ -61,19 +59,19 @@ def _smooth(y, k=5):
     return np.convolve(pad, w / w.sum(), mode="same")[k:-k]
 
 
-def a_skirt(y0, y1, r1_scale, pleats, depth, seed, n=240, steps=16, bulge=0.0):
+def a_skirt(y0, y1, r1_scale, pleats, depth, seed, n=240, steps=16, bulge=0.0, r0_scale=1.06, margin=0.012):
     """A ラインのひだスカート。太ももを避ける幅と円錐の幅のうち大きい方を高さ方向にならし、
     腰のすぐ下が筒になって急に折れる形にしない。ひだの深さと幅は 1 本ずつ少し変える。"""
     rng = np.random.default_rng(seed)
-    rx0, rz0, cz0 = parts.torso_r(y0, 1.06)
+    rx0, rz0, cz0 = parts.torso_r(y0, r0_scale)
     ys = np.linspace(y0, y1, steps)
     sx, sz, cz = [], [], []
     for y in ys:
         t = (y0 - y) / (y0 - y1)
         x0 = rx0 + (rx0 * r1_scale - rx0) * t ** 0.85 + bulge * np.sin(np.pi * t)
         z0 = rz0 + (rx0 * r1_scale * 0.85 - rz0) * t ** 0.85 + bulge * np.sin(np.pi * t)
-        c = cz0 + 0.01 * t
-        x1, z1 = parts.clear_legs(y, x0, z0, c)
+        c = cz0 + 0.008 * t
+        x1, z1 = parts.clear_legs(y, x0, z0, c, margin=margin)
         sx.append(x1); sz.append(z1); cz.append(c)
     # 外へ押し出した所だけ持ち上げてから少しならす（細くはしない）
     # 腰のいちばん上は元の細さのままにする（ならしたせいで上端まで太ると、腰に棚のような段ができる）
@@ -88,11 +86,13 @@ def a_skirt(y0, y1, r1_scale, pleats, depth, seed, n=240, steps=16, bulge=0.0):
     rings, centers = [], []
     for k, y in enumerate(ys):
         t = k / (steps - 1)
-        r = 1 + depth * t * amp * np.abs(np.sin(ph))
+        r = 1 + depth * (t ** 0.75) * amp * np.abs(np.sin(ph))
         ctr = np.array([0, y, cz[k]])
-        rings.append(ctr + np.stack([sx[k] * r * np.cos(a), np.zeros(n), sz[k] * r * np.sin(a)], 1))
+        pts = ctr + np.stack([sx[k] * r * np.cos(a), np.zeros(n), sz[k] * r * np.sin(a)], 1)
+        pts[:, 1] -= 0.003 * t * np.cos(2 * a)
+        rings.append(pts)
         centers.append(ctr)
-    return loft(rings, centers=centers)
+    return loft(rings, cap0=True, centers=centers)
 
 
 def puff_sleeve(s, t0, t1, seed, nt=72, na=72):
@@ -129,7 +129,7 @@ def puff_sleeve(s, t0, t1, seed, nt=72, na=72):
         r = prof[i] * (1 + disp[i])
         rings.append(c + np.outer(np.cos(a) * r, u) + np.outer(np.sin(a) * r, v))
         centers.append(c)
-    return loft(rings, centers=centers)
+    return loft(rings, cap0=True, cap1=True, centers=centers)
 
 
 def build(out_dir):
@@ -185,13 +185,21 @@ def build(out_dir):
     def hem_lift(a):  # 裾はひだの山で少し下がり、谷で上がる
         return -0.10 * fold_at(a, 0.645) + 0.002 * _noise(a, 1.3, 11)
     ys = np.linspace(0.828, 0.645, 46)
-    rings = []
+    rings, in_rings, ctrs = [], [], []
     for y in ys:
         r = coat_ring(y)
         if y < 0.68:
             r[:, 1] += hem_lift(np.linspace(a0, a1, len(r))) * smoothstep(0.68, 0.645, y)
+        cz = parts.torso_r(y)[2]
+        c_y = np.array([0.0, y, cz])
         rings.append(r)
-    m.add("coat", loft(rings, closed=False, centers=[np.array([0, y, parts.torso_r(y)[2]]) for y in ys]), torso)
+        ctrs.append(c_y)
+        in_rings.append(np.column_stack([r[:, 0] * 0.93, r[:, 1], cz + (r[:, 2] - cz) * 0.93]))
+    m.add("coat", loft(rings, closed=False, centers=ctrs), torso)
+    lining = loft(in_rings, closed=False, centers=ctrs)
+    m.add("coat", MeshData(lining[0], lining[1][:, ::-1], lining.uv), torso)
+    hem_ctr = np.array([0.0, ys[-1] + 0.05, ctrs[-1][2]])
+    m.add("coat", loft([rings[-1], in_rings[-1]], closed=False, centers=[hem_ctr, hem_ctr]), torso)
     # 首を包んであごの下まで立つファーの襟（前は少し開く）と、肩へ広がるファーのショール
     neck_c = np.array([0.0, 0.0, 0.004])
     # 立ち襟は背の高い 1 本の厚いファー（輪を積むと蛇腹に見える）。肩のショールは平たく広く寝かせる
@@ -211,10 +219,10 @@ def build(out_dir):
         m.add("fur", fur(edge, 0.010, seed=5 + k), torso)
 
     # ---- スカート：黄土色のひだが 2 段に重なって広がる。腰にファー ----
-    # 下の段が水平の円盤に見えないよう、広がりを抑えて丈で重ねる
-    sk = physics.skirt(c, 0.590, 0.478, 1.80)
-    m.add("skirt", a_skirt(0.590, 0.522, 1.55, pleats=22, depth=0.08, seed=12), sk)
-    m.add("skirt", a_skirt(0.556, 0.478, 1.80, pleats=28, depth=0.10, seed=13, bulge=0.004), sk)
+    # 下の段が水平の円盤に見えないよう、上の段の内側から深く重ねて段をなくす
+    sk = physics.skirt(c, 0.590, 0.476, 1.80)
+    m.add("skirt", a_skirt(0.590, 0.520, 1.58, pleats=22, depth=0.08, seed=12, r0_scale=1.03, margin=0.012), sk)
+    m.add("skirt", a_skirt(0.552, 0.476, 1.48, pleats=28, depth=0.10, seed=13, bulge=0.004, r0_scale=0.96, margin=0.006), sk)
     wrx, wrz, wcz = parts.torso_r(0.588, 1.06)  # 腰のファーは体に沿わせる（大きいと棚のように張り出す）
     m.add("fur", fur(ring([0, 0.588, wcz], [1, 0, 0], [0, 0, 1], wrx + 0.005, wrz + 0.005, 120), 0.009, closed=True, seed=6),
           m.skin_fixed("下半身"))
@@ -230,10 +238,10 @@ def build(out_dir):
         m.add("fur", fur(cuff, 0.014, closed=True, seed=7 if s > 0 else 8), arm)
         # ブーツ：足首のすぐ上までの短い丈（公式の絵）。履き口に大きなファーの縁、丸く太いつま先
         leg = c.skin_leg(jp)
-        m.add("coat", parts.leg_tube(s, 0.098, 0.030, lambda t: 1.95 + 0.15 * t, steps=16, n=56,
-                                     rmod=lambda a: 1 + 0.025 * np.sin(a * 5)), leg)
+        m.add("coat", parts.leg_tube(s, 0.098, 0.030, lambda t: 1.72 + 0.18 * t, steps=16, n=56,
+                                     rmod=lambda a: 1 + 0.025 * np.sin(a * 5), cap0=True, cap1=True), leg)
         top = parts.leg_at(0.100, s)[1]
-        m.add("fur", fur(ring(top, [1, 0, 0], [0, 0, 1], 0.046, 0.046, 90), 0.018, closed=True, seed=9 if s > 0 else 10), leg)
+        m.add("fur", fur(ring(top, [1, 0, 0], [0, 0, 1], 0.042, 0.042, 90), 0.019, closed=True, seed=9 if s > 0 else 10), leg)
         # 足の部分：丸く太いつま先の木型。厚い靴底、つま先の U 字の縫い目（モカシン縫い）、前に下がるファーの玉
         ank = m.skin_fixed(jp + "足首")
         L = Last(s, wide=1.38, high=1.22, long=1.14, round_toe=1.7, lift=0.0085)
@@ -244,10 +252,10 @@ def build(out_dir):
         seam = np.vstack([L.line(ts, np.pi / 2 + ph, 0.0008), L.line(ts[::-1], np.pi / 2 - ph[::-1], 0.0008)])
         m.add("stitch", tube(seam, 0.0017, n=8, cap0=True, cap1=True), ank)
         # 靴底との境の縫い目
-        tt = np.concatenate([np.linspace(0.02, 0.98, 40), np.linspace(0.98, 0.02, 40)])
-        aa = np.concatenate([np.full(40, -0.42), np.full(40, np.pi + 0.42)])
+        tt = np.concatenate([[0.0], np.linspace(0.02, 0.98, 40), [1.0], np.linspace(0.98, 0.02, 40)])
+        aa = np.concatenate([[-0.42], np.full(40, -0.42), [np.pi + 0.42], np.full(40, np.pi + 0.42)])
         welt = L.line(tt, aa, 0.0006)
-        m.add("stitch", tube(np.vstack([welt, welt[:1]]), 0.0013, n=8), ank)
+        m.add("stitch", tube(welt, 0.0013, n=8, closed=True), ank)
 
     hair(c)
     finish(m)
@@ -272,7 +280,7 @@ def hair(c):
     for th in np.linspace(-0.95, 0.95, 7):
         cover = np.clip((0.30 - th) / 0.85, 0, 1)
         e_end = top - 0.74 * cover
-        c.bang("hair", th, e_end, 0.0330, e_start=1.25, pointy=False, lift_end=1.065 + 0.03 * cover, sway=-0.12 * cover)
+        c.bang("hair", th, e_end, 0.0330, e_start=1.34, pointy=False, lift_end=1.065 + 0.03 * cover, sway=-0.12 * cover)
     # あごの長さのボブ：横は口の下、後ろはうなじで切れ、毛先は外へはねる。目尻より外から始める
     for th in np.linspace(1.35, np.pi, 5):
         for sg in ((1, -1) if th < np.pi - 1e-3 else (1,)):

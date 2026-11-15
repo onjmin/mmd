@@ -104,11 +104,13 @@ def ellipsoid(c, r, R=None, nu=24, nv=14, keep=None, shape=None):
     return mesh
 
 
-def frames_along(path, up=None):
+def frames_along(path, up=None, closed=False):
     """パスに沿った (接線, 横, 法線)。横は up と接線から作り、なければ平行移動で運ぶ。"""
     path = np.asarray(path, float)
-    t = np.gradient(path, axis=0)
-    t = norm(t)
+    if closed and len(path) >= 3:
+        t = norm(np.roll(path, -1, axis=0) - np.roll(path, 1, axis=0))
+    else:
+        t = norm(np.gradient(path, axis=0))
     sides = []
     for i in range(len(path)):
         u = up[i] if up is not None and np.ndim(up) == 2 else (up if up is not None else None)
@@ -123,18 +125,30 @@ def frames_along(path, up=None):
             s = norm(np.asarray(u) - (np.asarray(u) @ t[i]) * t[i])
         sides.append(s)
     sides = np.array(sides)
+    if closed and up is None and len(path) >= 3:
+        # Distribute parallel-transport twist evenly around a closed loop so seam i=-1 -> 0 has no kinks.
+        s_wrap = norm(sides[-1] - (sides[-1] @ t[0]) * t[0])
+        theta = np.arctan2(np.cross(s_wrap, sides[0]) @ t[0], np.clip(s_wrap @ sides[0], -1.0, 1.0))
+        if abs(theta) > 1e-6:
+            ang = theta * (np.arange(len(path)) / len(path))
+            sides = sides * np.cos(ang)[:, None] + np.cross(t, sides) * np.sin(ang)[:, None]
     nrm = norm(np.cross(t, sides))
     return t, sides, nrm
 
 
-def tube(path, ru, rv=None, n=12, side=None, cap0=False, cap1=False, rmod=None):
+def tube(path, ru, rv=None, n=12, side=None, cap0=False, cap1=False, rmod=None, closed=False):
     """パスに沿う管。ru は横方向（side）、rv はそれと直交する方向の半径。"""
     path = np.asarray(path, float)
     ru = _resample(ru, len(path))
     rv = ru if rv is None else _resample(rv, len(path))
-    _, s, nn = frames_along(path, side)
+    _, s, nn = frames_along(path, side, closed=closed)
     rings = [ring(path[i], s[i], nn[i], ru[i], rv[i], n, rmod=rmod) for i in range(len(path))]
-    return loft(rings, cap0=cap0, cap1=cap1, centers=list(path))
+    centers = list(path)
+    if closed and len(rings) >= 3:
+        rings.append(rings[0])
+        centers.append(path[0])
+        cap0 = cap1 = False
+    return loft(rings, cap0=cap0, cap1=cap1, centers=centers)
 
 
 def _resample(r, n):
@@ -150,9 +164,9 @@ def torus(c, axis, R, r, n=24, m=8):
     ref = np.array([1.0, 0, 0]) if abs(axis[0]) < 0.9 else np.array([0, 0, 1.0])
     u = norm(np.cross(axis, ref))
     v = np.cross(axis, u)
-    a = np.arange(n + 1) / n * TAU
+    a = np.arange(n) / n * TAU
     path = np.asarray(c) + np.outer(np.cos(a), u) * R + np.outer(np.sin(a), v) * R
-    return tube(path, r, n=m, side=np.broadcast_to(axis, path.shape))
+    return tube(path, r, n=m, side=np.broadcast_to(axis, path.shape), closed=True)
 
 
 def catmull(points, samples=24):
