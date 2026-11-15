@@ -29,7 +29,7 @@ def build(out_dir):
     m = Model("フェリス", "Feris", "フェリス（非公式・二次創作モデル）", 150)
     c = Character(m, tex=TextureSet(out_dir), hair_color=HAIR, skin_color=(1.0, 0.87, 0.79), eye_color=(0.82, 0.12, 0.12), bust=1.18,
                   eye=dict(rx=0.0163, ry=0.0127, top=0.88, iris=0.70, iris_h=1.05, iris_y=-0.06, iris_in=0.05),
-                  mouth=dict(rx=0.0100, ry=0.0036, smile=-0.8, fang=True))
+                  mouth=dict(rx=0.0098, ry=0.0036, smile=0.60, open_bottom=1.12, fang=True))
     m.material("top", "タンクトップ", TOP, toon=0)
     m.material("top_trim", "タンクトップの縁", tuple(np.array(TOP) * [0.93, 0.80, 0.55]), toon=0, edge=False)
     m.material("skirt", "スカート", SKIRT, double=True, toon=0)
@@ -55,7 +55,8 @@ def build(out_dir):
 
     c.build_body(torso_bands=[(1.0, "skin"), (0.770, "top"), (0.650, "skin"), (0.585, "shorts")],
                  leg_bands=[(1.0, "shorts"), (0.560, "skin"), (0.300, "sock")], arm_bands=[(-1.0, "skin")])
-    c.build_face(closed_mouth_color=(0.62, 0.30, 0.32))
+    c.build_face(closed_mouth_color=(0.62, 0.30, 0.32), brow_color=(0.54, 0.28, 0.14),
+                 brow_dy=0.02, brow_tilt=0.08, brow_thick=1.08)
 
     torso = c.skin_torso()
     # 肩ひも
@@ -92,8 +93,8 @@ def build(out_dir):
     # 帯の上の縁は体に付け、下へ向かってスカートの太さまで広げる（上が開いた輪にしない）
     m.add("skirt", parts.band_around_torso(0.608, 0.594, lambda y: 1.012 + 0.058 * min(1.0, (0.608 - y) / 0.004), steps=8, n=96),
           m.skin_fixed("下半身"))
-    # 胸の「炎」：胸の前面に沿わせた板
-    m.add("en", chest_mark(c, 0.716, 0.064, 0.032), torso)
+    # 胸の「炎」：引き上げた胸の前面に正しい縦横比で配置する
+    m.add("en", chest_mark(c, 0.730, 0.036, 0.034), torso)
 
     hair(c)
     hat(c)
@@ -102,51 +103,55 @@ def build(out_dir):
     return m
 
 
-def pleated_skirt(y0, y1, r1_scale, pleats=20, depth=0.085, steps=14):
-    """車ひだのプリーツスカート。parts.skirt と同じ円錐の上に、ゆるく上がって急に落ちる のこぎり形のひだを付ける
-    （折り山がはっきり立つ。サイン波のひだだと波板に見える）。ひだは裾へ行くほど深い。"""
+def pleated_skirt(y0, y1, r1_scale, pleats=20, depth=0.085, steps=16):
+    """車ひだのプリーツスカート。中腹が膨らまないきれいなAラインの円錐にする。"""
     rx0, rz0, cz0 = parts.torso_r(y0, 1.055)
     per = 20
     n = pleats * per
     a = np.arange(n) / n * TAU
     x = (np.arange(n) % per) / per
     saw = np.where(x < 0.85, x / 0.85, (1 - x) / 0.15) - 0.5
-    rings, centers = [], []
-    for k, y in enumerate(np.linspace(y0, y1, steps)):
+    ys = np.linspace(y0, y1, steps)
+    sx_l, sz_l, cz_l = [], [], []
+    for k, y in enumerate(ys):
         t = k / (steps - 1)
-        sx = rx0 + (rx0 * r1_scale - rx0) * t
-        sz = rz0 + (rx0 * r1_scale * 0.85 - rz0) * t
-        ctr = np.array([0, y, cz0 + 0.008 * t])
-        sx, sz = parts.clear_legs(y, sx, sz, ctr[2])
-        r = 1 + depth * (t ** 0.75) * saw
-        pts = ctr + np.stack([sx * r * np.cos(a), np.zeros(n), sz * r * np.sin(a)], 1)
-        pts[:, 1] -= 0.004 * t * np.cos(2 * a)
+        x0 = rx0 + (rx0 * r1_scale - rx0) * (t ** 0.92)
+        z0 = rz0 + (rx0 * r1_scale * 0.88 - rz0) * (t ** 0.92)
+        c_z = cz0 + 0.008 * t
+        x1, z1 = parts.clear_legs(y, x0, z0, c_z, margin=0.012)
+        sx_l.append(x1); sz_l.append(z1); cz_l.append(c_z)
+    # 上から下へ滑らかに単調拡大して中間の段差を防ぐ
+    sx_a = np.maximum.accumulate(np.convolve(np.pad(sx_l, 2, mode="edge"), [0.1, 0.2, 0.4, 0.2, 0.1], mode="same")[2:-2])
+    sz_a = np.maximum.accumulate(np.convolve(np.pad(sz_l, 2, mode="edge"), [0.1, 0.2, 0.4, 0.2, 0.1], mode="same")[2:-2])
+    sx_a = np.maximum(sx_a, sx_l); sz_a = np.maximum(sz_a, sz_l)
+    rings, centers = [], []
+    for k, y in enumerate(ys):
+        t = k / (steps - 1)
+        ctr = np.array([0, y, cz_l[k]])
+        r = 1 + depth * (t ** 0.80) * saw
+        pts = ctr + np.stack([sx_a[k] * r * np.cos(a), np.zeros(n), sz_a[k] * r * np.sin(a)], 1)
+        pts[:, 1] -= 0.003 * t * np.cos(2 * a)
         rings.append(pts)
         centers.append(ctr)
     return loft(rings, cap0=True, centers=centers)
 
 
 def hair(c):
-    """おんJwiki のフェリス保管庫の絵に多い形：あご〜首までのやわらかいボブ。頭に沿って下り、毛先は少し内へ入って細かくとがる。
-    前髪はぎざぎざに分かれて眉の上まで、目と目の間に少し長い束。顔の横の髪は頬からあごまで。"""
+    """やわらかな橙ボブ：前髪・横髪・ボブが自然に重なり、とがった細棒が浮かないようにする。"""
     c.hair_cap("hair")
     rng = np.random.default_rng(11)
-    # 前髪：先のとがった束 7 本。真ん中の 1 本だけ目と目の間まで長い
     top = c.eye["pitch"] + 0.44
     for k, th in enumerate(np.linspace(-0.78, 0.78, 7)):
-        e_end = top - 0.10 * abs(th) + 0.025 * np.sin(th * 11) - (0.10 if k == 3 else 0.0)
-        c.bang("hair", th, e_end, 0.0290, e_start=1.32, pointy=True, lift_end=1.045, sway=0.18 * th)
-    # 顔の横の髪：目尻の外から頬の横を下り、あごの高さでとがって終わる
+        e_end = top - 0.09 * abs(th) + 0.020 * np.sin(th * 11) - (0.09 if k == 3 else 0.0)
+        c.bang("hair", th, e_end, 0.0315, e_start=1.32, pointy=True, lift_end=1.024, sway=0.14 * th)
     for sg in (1, -1):
-        for th, e_end, w in [(1.08, c.eye["pitch"] - 0.42, 0.0200), (1.24, c.eye["pitch"] - 0.50, 0.0230)]:
-            c.bang("hair", sg * th, e_end, w, thick=0.0060, e_start=1.32, pointy=True, lift_end=1.035, sway=sg * 0.05)
-    # ボブ：頭のいちばん広い所からまっすぐ下ろし、毛先へ向かって少し内へ丸める（肩をよけて外へ広げない）。
-    # 横はあごの高さ、後ろはうなじの少し下まで。束を重ねて切れ目のない面にする
-    for th in np.linspace(1.40, np.pi, 7):
+        for th, e_end, w in [(1.08, c.eye["pitch"] - 0.42, 0.0210), (1.24, c.eye["pitch"] - 0.50, 0.0240)]:
+            c.bang("hair", sg * th, e_end, w, thick=0.0055, e_start=1.32, pointy=True, lift_end=1.022, sway=sg * 0.04)
+    for th in np.linspace(1.38, np.pi, 7):
         for sg in ((1, -1) if th < np.pi - 1e-3 else (1,)):
-            y_end = 0.856 - 0.010 * (th - 1.40) / (np.pi - 1.40) + rng.uniform(-0.004, 0.004)
-            c.drape("hair", sg * th, y_end, 0.050, thick=0.0075, flare=0.0, pointy=True, wave=0.002,
-                    clearance=(0.0, 0.0, 0.0), tuck=0.20)
+            y_end = 0.854 - 0.010 * (th - 1.38) / (np.pi - 1.38) + rng.uniform(-0.003, 0.003)
+            c.drape("hair", sg * th, y_end, 0.058, thick=0.0070, flare=0.0, pointy=True, wave=0.002,
+                    clearance=(0.0, 0.0, 0.0), tuck=0.22)
 
 
 def hat(c):
@@ -167,9 +172,9 @@ def hat(c):
     bc = hc + np.array([0, -0.10 * hr[1], -0.93 * hr[2]])
     br = np.array([0.55 * hr[0], 0.30 * hr[1], 0.40 * hr[2]])
     m.add("beak", ellipsoid(bc, br, nu=48, nv=24), m.skin_fixed("頭"))
-    # くちばしの合わせ目（上下の境の線）と、上の小さな鼻の穴
-    seam = ring(bc, [1, 0, 0], [0, 0, 1], br[0] * 1.012, br[2] * 1.012, 40, np.pi * 1.04, np.pi * 1.96, closed=False)
-    m.add("beak_line", tube(seam, 0.0011, n=6, cap0=True, cap1=True), m.skin_fixed("頭"))
+    # くちばしの合わせ目（角ばってはみ出さない角度に収める）と小さな鼻の穴
+    seam = ring(bc, [1, 0, 0], [0, 0, 1], br[0] * 1.004, br[2] * 1.004, 40, np.pi * 1.12, np.pi * 1.88, closed=False)
+    m.add("beak_line", tube(seam, 0.0010, n=6, cap0=True, cap1=True), m.skin_fixed("頭"))
     for sg in (1, -1):
         nd = np.array([sg * 0.20, 0.80, -0.56])
         nd /= np.linalg.norm(nd)
@@ -245,9 +250,9 @@ def wings(c):
         sides = np.cross(tang, [0, 0, 1.0])
         sides /= np.linalg.norm(sides, axis=1, keepdims=True) + 1e-9
         c.strand(path, width * prof + 0.0012, thick, sides, mat, skin=skin)
-        if shaft:  # 羽軸：前と後ろの面に細い筋
-            for dz in (-thick * 2.6, thick * 0.9):
-                m.add("flame_in", tube(path[1:-2] + [0, 0, dz], np.linspace(0.0016, 0.0006, len(path) - 3), n=6), skin)
+        if shaft:  # 羽軸：羽根の面に密着させて浮かせない
+            for dz in (-thick * 0.5, thick * 0.4):
+                m.add("flame_in", tube(path[1:-2] + [0, 0, dz], np.linspace(0.0012, 0.0005, len(path) - 3), n=6), skin)
 
     for sg in (1, -1):
         root = np.array([sg * 0.036, 0.752, 0.060])

@@ -33,8 +33,8 @@ def band_around_torso(y0, y1, grow, a0=0.0, a1=TAU, steps=6, n=36, rmod=None, ex
 
 def clear_legs(y, sx, sz, cz, margin=0.012):
     """スカートの楕円 (sx, sz, 中心 z=cz) が太ももの断面を丸ごと含むまで広げる。
-    外側だけ見ると、斜め前の太ももが楕円を突き抜けてスカートに穴があく。"""
-    if y >= 0.570:
+    急な段差でスカート中腹が膨らまないよう、上から下へ広い区間でなだらかに効かせる。"""
+    if y >= 0.605:
         return (sx, sz)
     lr, lc = leg_at(y, 1.0)
     th = np.linspace(0, TAU, 48, endpoint=False)
@@ -43,7 +43,7 @@ def clear_legs(y, sx, sz, cz, margin=0.012):
     k = np.sqrt(((x / sx) ** 2 + (z / sz) ** 2).max())
     if k <= 1:
         return (sx, sz)
-    u = float(np.clip((0.570 - y) / 0.030, 0.0, 1.0))
+    u = float(np.clip((0.605 - y) / 0.100, 0.0, 1.0))
     fade = u * u * (3.0 - 2.0 * u)
     k = 1.0 + (k - 1.0) * fade
     return (sx * k, sz * k)
