@@ -63,7 +63,16 @@ python serve.py
 ブラウザなしで正面の顔を PNG にするなら `python -m mmdgen.render feris out.png bare`（`bare` は髪と服を消して輪郭と目を見る、`face` は髪あり）。
 関数 `render()` は `yaw`（斜め・横から）と `clay=True`（色を消して凹凸だけ）も使える。
 
-頭の肌の形（顔・あご・後頭部・首の付け根）は、既製の MMD モデル「うか」の頭を `python -m mmdgen.head_scan` で一周輪切りにした表 `mmdgen/head_shape.py` から作る。
+頭の肌の形は 2 通りの作り方があり、いまは設計曲線から作る方（`build.py` の `DEFAULT_HEAD = "sculpt"`、`mmdgen/body.py` の `SculptHead`）を使っている。
+正面の輪郭の幅・横顔の前の線・後頭部の線の 3 本（`SC_W`・`SC_F`・`SC_B`）を直接決めるので、輪郭を直すときはこの数値を動かす。
+もう一方（`scan`）は既製モデルを測った表から作る。見比べるには両方を別フォルダに書き出して並べる：
+
+```bash
+python build.py tabane_roze_scan tabane_roze_sculpt
+# http://localhost:8765/viewer/compare.html?m=tabane_roze_scan,tabane_roze_sculpt&cam=face&yaw=40
+```
+
+`scan` の頭の形（顔・あご・後頭部・首の付け根）は、既製の MMD モデル「うか」の頭を `python -m mmdgen.head_scan` で一周輪切りにした表 `mmdgen/head_shape.py` から作る。
 測り直すときは「うか」を手元に置く（リポジトリには入れない）：
 
 ```bash

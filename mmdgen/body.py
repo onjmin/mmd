@@ -469,6 +469,106 @@ class Head:
         return _flat_loft(rings, d0 if plane_dir is None else plane_dir, closed)
 
 
+# ---- 設計曲線から作る頭（既製モデルを測った表を使わない） ----
+# 表（head_shape.py）は大人の頭を測ったもので、萌え顔にするために高さ・幅・頬を後から伸び縮みさせていた。
+# こちらは「正面から見た輪郭の半分の幅 W(h)」「横顔の前の線 F(h)」「後頭部の線 B(h)」の 3 本を直接決め、
+# 各高さの断面をその 3 つを通る丸い形（超楕円）にする。正面の輪郭と横顔が、決めた曲線そのままになる。
+# 数値は頭の高さ（あご先 0〜頭頂 1）を 1 とした長さ。h は高さ。
+SC_W = [(0.000, 0.028), (0.012, 0.062), (0.030, 0.098), (0.055, 0.140), (0.090, 0.194), (0.125, 0.238), (0.160, 0.273),
+        (0.200, 0.303), (0.250, 0.329), (0.300, 0.344), (0.345, 0.352), (0.420, 0.358), (0.500, 0.360), (0.620, 0.359)]
+# 横顔は測った表の頭と同じ線にする（口もとが目の高さより少し前に出て、あご先は引く。平らにすると横顔がのっぺりする）
+SC_F = [(0.000, 0.255), (0.012, 0.335), (0.030, 0.366), (0.055, 0.378), (0.090, 0.392), (0.125, 0.410), (0.160, 0.424),
+        (0.200, 0.432), (0.250, 0.430), (0.300, 0.416), (0.345, 0.407), (0.420, 0.420), (0.500, 0.436), (0.600, 0.440)]
+SC_B = [(0.000, 0.172), (0.090, 0.180), (0.160, 0.243), (0.250, 0.342), (0.345, 0.418), (0.500, 0.456), (0.600, 0.460)]
+SC_NOSE = (0.256, 0.042, 0.030, 0.16)   # 鼻先：高さ、出っ張り、縦の広がり、横の広がり（ラジアン）
+SC_NECK = (0.125, 0.1425, 0.0475)       # 首の付け根：横の半径、前後の半径、軸から後ろへのずれ
+SC_HMIN = -0.1725
+
+
+_SC_CACHE = {}
+
+
+def _sc_curve(pts, h, top):
+    """制御点をなめらかにつないだ曲線。top より上は頭頂 1 で 0 になる楕円の弧で閉じる。"""
+    key = tuple(pts)
+    if key not in _SC_CACHE:  # 何万回も呼ばれるので、なめらかにした点列は 1 度だけ作る
+        d = catmull(np.array(pts, float), 16 * len(pts))
+        o = np.argsort(d[:, 0])
+        _SC_CACHE[key] = (d[o, 0], d[o, 1])
+    xs, ys = _SC_CACHE[key]
+    h = np.asarray(h, float)
+    low = np.interp(h, xs, ys)
+    vmax = pts[-1][1]
+    arc = vmax * np.sqrt(np.clip(1 - ((h - top) / (1 - top)) ** 2, 0, 1))
+    return np.where(h > top, arc, low)
+
+
+class SculptHead(Head):
+    """設計曲線から作る頭。Head と同じ使い方（surface・point・project・decal・mesh）で、形の出どころだけが違う。"""
+
+    def __init__(self, chin_y=0.860, height=0.138, z=-0.0075, eye_h=0.375, width=HEAD_WIDTH, jaw_x=JAW_X):
+        self.H, self.y0, self.eye_h = height, chin_y, eye_h
+        self.width, self.jaw_x = width, jaw_x
+        self.L = eye_h * height
+        self.zc = z
+        self.h_min = SC_HMIN
+        self.c = np.array([0.0, chin_y + 0.52 * height, z])
+        self.sockets = []
+        self.wk = width / 0.455  # 顔の幅の調整値（調整ページの「顔の幅」。0.455 で設計どおり）
+        hs = np.linspace(0, 1, 200)
+        self.r = np.array([self._W(hs).max(), 0.50, (self._F(hs).max() + _sc_curve(SC_B, hs, 0.60).max()) / 2]) * height
+
+    def _W(self, h):
+        # 頬（調整ページの「頬の張り」）：正であご〜口の高さを細く、負で広く
+        slim = 1 - self.jaw_x * 1.2 * np.exp(-((np.asarray(h, float) - 0.10) / 0.10) ** 2)
+        return _sc_curve(SC_W, h, 0.62) * self.wk * slim
+
+    def _F(self, h):
+        return _sc_curve(SC_F, h, 0.60)
+
+    def scales(self, h):
+        one = np.ones_like(np.asarray(h, float))
+        return self.H * one, self.H * one
+
+    def radius(self, h, phi):
+        h, phi = np.broadcast_arrays(np.asarray(h, float), np.asarray(phi, float))
+        a = np.abs(np.arctan2(np.sin(phi), np.cos(phi)))  # 正面 0〜真後ろ π
+        s, c = np.sin(a), np.cos(a)
+        hc = np.clip(h, 0.0, 1.0)
+        W = np.maximum(self._W(hc), 1e-4)
+        D = np.where(c >= 0, self._F(hc), _sc_curve(SC_B, hc, 0.60))
+        D = np.maximum(D, 1e-4)
+        # 顔の正面（目〜頬の高さ）は少し角ばった断面にして、平らな顔から頬で丸く回り込ませる
+        n = 2.0 + 0.45 * np.exp(-((hc - 0.30) / 0.20) ** 2) * (c >= 0)
+        head = ((s / W) ** n + (np.abs(c) / D) ** n) ** (-1.0 / n)
+        _, amp, sh, sp = SC_NOSE
+        nh = self.eye_h * (1 - NOSE_DROP) + 0.008  # 鼻先のふくらみは、鼻の点（Character が置く）のすぐ上
+        dh = (h - nh) / np.where(h < nh, sh * 0.75, sh * 1.25)  # 鼻の下は急に、上（鼻筋）はなだらかに
+        head = head + amp * np.exp(-dh ** 2 - (a / sp) ** 2)
+        # あご先より下では頭の形を首の中へしぼませる
+        head = head * (1 - smoothstep(0.0, -0.035, h))
+        na, nb, nd = SC_NECK
+        A = (s / na) ** 2 + (c / nb) ** 2
+        Bq = 2 * c * nd / nb ** 2
+        Cq = (nd / nb) ** 2 - 1
+        neck = (-Bq + np.sqrt(np.maximum(Bq * Bq - 4 * A * Cq, 0))) / (2 * A)
+        # 首は耳の下の高さまで。そこから上は頭の形だけにする
+        neck = neck * (1 - smoothstep(0.16, 0.30, h))
+        p = 7.0
+        return (head ** p + neck ** p) ** (1 / p)
+
+    def surface(self, h, phi):
+        h_c = np.clip(h, self.h_min, 1)
+        rho = self.radius(h_c, phi) * self.H
+        y = self.y0 + h_c * self.H
+        p = np.stack(np.broadcast_arrays(rho * np.sin(phi), y, self.zc - rho * np.cos(phi)), -1)
+        return self._carve(p)
+
+
+NOSE_DROP = 0.36  # 鼻の点の高さ：目の線〜あご先の何割だけ目の線より下か（立ち絵の比率）
+HEAD_STYLE = "scan"  # "sculpt" で SculptHead を使う（build.py が切り替える）
+
+
 def _flat_loft(rings, outward, closed=True):
     mesh = loft(rings, closed=closed)
     verts, faces = mesh
@@ -534,7 +634,7 @@ class Character:
         self.hair_color = hair_color
         # 顔の調整値（mmdgen/face.py。調整ページで人が決めてキャラごとの json に保存したもの）
         F = _face.get
-        self.head = Head(eye_h=F("eye_height"), width=F("face_width"), jaw_x=F("cheek"))
+        self.head = (SculptHead if HEAD_STYLE == "sculpt" else Head)(eye_h=F("eye_height"), width=F("face_width"), jaw_x=F("cheek"))
         self.skin_color = skin_color
         orig_eye = self._orig_eye = "#" + "".join(f"{int(round(c * 255)):02x}" for c in eye_color)
         if F("eye_color"):
@@ -559,8 +659,8 @@ class Character:
         # 調整ページに今の値を見せるため、効いている値を残す
         _face.EFFECTIVE = dict(eye_color="#" + "".join(f"{int(round(c * 255)):02x}" for c in self.eye_color), orig_eye_color=orig_eye)
         self.eye["pitch"] = self.head.pitch_at(self.eye["h"], self.eye["yaw"])
-        self.mouth = dict(rx=0.0080, ry=0.0010, smile=1.0, open_bottom=1.0, h=hd.eye_h * (1 - 0.66),
-                          nose_h=hd.eye_h * (1 - 0.35), fang=False)
+        self.mouth = dict(rx=0.0080, ry=0.0010, smile=1.0, open_bottom=1.0, h=hd.eye_h * (1 - 0.67),
+                          nose_h=hd.eye_h * (1 - NOSE_DROP), fang=False)
         self.mouth.update(mouth or {})
         self.mouth["pitch"] = self.head.pitch_at(self.mouth["h"])
         self.mouth["nose_pitch"] = self.head.pitch_at(self.mouth["nose_h"], 0.02)
