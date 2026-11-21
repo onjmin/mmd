@@ -187,7 +187,8 @@ def build(out_dir):
     def hem_lift(a):
         return -0.05 * fold_at(a, 0.645) + 0.0016 * _noise(a, 1.3, 11)
 
-    ys = np.linspace(0.818, 0.645, 46)
+    # コートの上端は肩の上の線（0.82〜0.83）を越えて首の付け根まで覆う（肩を水平に張らせたので、0.818 で止めると肩のインナーがのぞく）
+    ys = np.concatenate([np.linspace(0.834, 0.820, 8), np.linspace(0.818, 0.645, 46)])
     rings, in_rings, ctrs = [], [], []
     for y in ys:
         r, ri, a = coat_ring(y)
@@ -195,6 +196,10 @@ def build(out_dir):
             hl = hem_lift(a) * smoothstep(0.68, 0.645, y)
             r[:, 1] += hl
             ri[:, 1] += hl
+        # 肩の上はほぼ水平なので、横へずらすだけでは肩の面から浮かない。上へも持ち上げる
+        lift = smoothstep(0.808, 0.824, y)
+        r[:, 1] += 0.0075 * lift
+        ri[:, 1] += 0.0030 * lift
         cz = parts.torso_r(y)[2]
         rings.append(r)
         in_rings.append(ri)
