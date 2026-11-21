@@ -1527,7 +1527,10 @@ class Character:
                 start = i
 
     def bang(self, mat, theta, e_end, width, thick=0.0055, e_start=1.34, pointy=True, scale=(1.065, 1.055, 1.075),
-             lift_end=1.065, mats=None, sway=0.0):
+             lift_end=1.065, mats=None, sway=0.0, taper=None, root_extra=0.0, close=(0.30, 0.80), blunt=False):
+        """前髪の束。taper=(始まり, 絞る割合) を渡すと、毛先の手前までは幅を保ち、そこから先だけを絞る（切りそろえた束の角の丸み）。
+        root_extra は根もと側だけ足す幅で、close の範囲で 0 になる。となりの束と根もとでは重なり、
+        毛先へ向かってすき間が開く（額がのぞく細い三角の切れ込み）。"""
         c, r = self.hair_surface(scale)
         # 束は細かく割り、根元から髪の面（hair_cap）の少し外を通す。面の内側から出てくる形だと、浅い角度で面と交わって
         # 切り口が階段状にがたつく。粗い分割も、となりの束と交わる線をぎざぎざにする
@@ -1539,12 +1542,15 @@ class Character:
         dirs = np.stack([np.sin(th) * np.cos(phis), np.sin(phis), -np.cos(th) * np.cos(phis)], 1)
         path = c + dirs * r * k[:, None]
         sides = np.stack([np.cos(th), np.zeros_like(th), np.sin(th)], 1)
-        if pointy:
+        if taper is not None:
+            w = width * (1 - taper[1] * np.clip((t - taper[0]) / (1 - taper[0]), 0.0, 1.0) ** 1.6)
+            w = w + root_extra * (1 - smoothstep(close[0], close[1], t))
+        elif pointy:
             w = width * (1 - 0.94 * (t ** 2.3))
         else:
             # 姫カット・ぱっつんでも毛先 40% をすっと絞って束ごとの繊細なすき間（眉や額がのぞく軽やかな抜け感）を作る
             w = width * (1 - 0.62 * np.clip((t - 0.58) / 0.42, 0.0, 1.0) ** 1.4)
-        self.strand(path, w, thick, sides, mats or mat, blunt=False)
+        self.strand(path, w, thick, sides, mats or mat, blunt=blunt)
 
     def drape(self, mat, theta, y_end, width, thick=0.007, e0=1.22, flare=0.10, pointy=True,
               scale=(1.065, 1.055, 1.075), mats_fn=None, clearance=(0.100, 0.090, 0.074), wave=0.0, bones=0, splay=0.0,

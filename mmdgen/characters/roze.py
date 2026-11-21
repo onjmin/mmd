@@ -382,35 +382,49 @@ def hair(c):
     m = c.m
     c.hair_cap("hair")
     rng = np.random.default_rng(7)
-    # 姫カットの前髪：眉毛がはっきり見える高さでまっすぐ切りそろえ、こめかみまで隙間なく覆う
-    cut = c.eye["pitch"] + 0.44
-    for th in np.linspace(-0.88, 0.88, 9):
-        c.bang("hair", th, cut - 0.015 * abs(th), 0.0175, thick=0.0055, e_start=1.34, pointy=False, lift_end=1.028)
+    # 前髪：頭の丸みに沿って下ろした大きな束を、眉の高さで長さをそろえて切る（ぱっつんの土台）。
+    # 一枚の帯にはせず、束の境目の毛先だけに短い切れ込み（分け目）を入れる。切れ込みは毛先の 2 割ほどで、上はとなりの束と重なって閉じる。
+    # 細い束は単独で垂らさない。大束の縁に寄り添わせ、毛先だけが大束から少し離れて見えるようにする
+    # （細い毛を切れ込みの真ん中に 1 本だけ下げると、額に線を引いたように見えて不自然）。
+    cut = c.eye["pitch"] + 0.285
+    R = 0.048  # 前髪の毛先の高さでの頭の半径（角度を幅に直す）
+    big = [(-0.89, 0.27, -0.012), (-0.47, 0.125, 0.0), (-0.07, 0.19, 0.0), (0.37, 0.14, 0.0), (0.86, 0.33, -0.012)]
+    for th, half, de in big:
+        c.bang("hair", th, cut + de, half * R, thick=0.0036, e_start=1.34, lift_end=1.028,
+               taper=(0.955, 0.14), root_extra=0.0070, close=(0.80, 0.97), blunt=True)
+    # 大束に付く細い束：(向き, 幅, 長さのずれ)。根もとは大束の中に埋まり、毛先だけが見える
+    for th, half, de in [(-0.292, 0.020, 0.012), (0.148, 0.020, 0.010), (0.200, 0.018, -0.008)]:
+        c.bang("hair", th, cut + de, half * R, thick=0.0030, e_start=1.34, lift_end=1.029,
+               taper=(0.90, 0.55), root_extra=0.0060, close=(0.78, 0.95), blunt=True)
     # 姫毛：頬の輪郭に沿って優しく内へ入る細い横髪
     for sg in (1, -1):
         for th, e_end, w in [(1.18, -0.58, 0.0135), (1.32, -0.46, 0.0150)]:
             c.bang("hair", sg * th, e_end, w, thick=0.0055, e_start=1.34, pointy=True, lift_end=1.024, sway=-sg * 0.06)
-    # 結い髪から下がる左右の房（立ち絵準拠）：首〜鎖骨の高さでふんわり内へカールして止める
+    # 結い髪から下がる左右の房（公式の立ち絵）：陰陽玉のすぐ下で外へふくらみ、あご〜肩の高さで終わる。
+    # 毛先は 1 つの丸い塊ではなく、長さの違う尖った束に分かれて扇のように開く（内の束は首の方へ、外の束は外へ跳ねる）。
+    # (毛先の高さ, 幅, 後ろへのずれ, 外への張り, 毛先の向き：負で内へ・正で外へ)
     hc, hr = c.hair_surface()
     bun_th, bun_ph = 1.14, 0.56
     for sg in (1, -1):
         base = hc + Head.dir(sg * bun_th, bun_ph) * hr
-        for k, (y_end, w, back, out) in enumerate([(0.832, 0.020, 0.004, 0.032), (0.818, 0.017, 0.014, 0.038)]):
+        for k, (y_end, w, back, out, tip) in enumerate([(0.848, 0.0125, 0.000, 0.024, -0.016), (0.828, 0.0160, 0.004, 0.033, -0.005),
+                                                        (0.814, 0.0150, 0.011, 0.040, 0.008), (0.832, 0.0120, 0.017, 0.046, 0.021),
+                                                        (0.852, 0.0085, 0.009, 0.050, 0.030)]):
             j = rng.uniform(-0.003, 0.003, 3)
             out = out + j[0]
             pts = [
                 base + [0, 0, back * 0.3],
                 base + [sg * 0.020, -0.020, 0.006 + back * 0.5],
                 base + [sg * (out + 0.004), -0.062 + j[1], 0.010 + back],
-                [sg * (abs(base[0]) + out - 0.010), y_end + 0.025, base[2] + 0.010 + back],
-                [sg * (abs(base[0]) + out - 0.022 + j[2]), y_end, base[2] + 0.004 + back],
+                [sg * (abs(base[0]) + out - 0.006), y_end + 0.030, base[2] + 0.010 + back],
+                [sg * (abs(base[0]) + out - 0.006 + tip + j[2]), y_end, base[2] + 0.004 + back],
             ]
             path = catmull(np.array(pts, float), 28)
             tg = np.gradient(path, axis=0)
             sides = np.cross(tg, [0, 0, 1.0])
             n = len(path)
             tt = np.linspace(0, 1, n)
-            widths = w * (0.65 + 0.35 * np.minimum(1, tt * 4)) * (1 - 0.90 * np.clip((tt - 0.70) / 0.30, 0, 1))
+            widths = w * (0.65 + 0.35 * np.minimum(1, tt * 4)) * (1 - 0.95 * np.clip((tt - 0.55) / 0.45, 0, 1) ** 1.3)
             c.strand(path, widths, 0.0048, sides, "hair", skin=c.hair_chain(path, base[1] - 0.03, 3, w * 0.6))
     # 後ろ髪（外側の黒は肩〜肩甲骨までを隙間なく覆う）
     for th in np.linspace(1.90, np.pi, 5):
