@@ -1307,7 +1307,9 @@ class Character:
 
             for mat, rows0, off, bone in layers:
                 rows = tilted(rows0)
-                shut = dict(keep=0.2, pivot=1.0 * ry) if mat in upper else {}
+                # 閉じた目のまつ毛は太さを残す（0.2 倍までつぶすと髪の毛 1 本ほどの線になり、閉じた目が弱く見える）。
+                # 二重と下まつ毛は細くたたんで、まつ毛の線の裏に隠す
+                shut = dict(keep=0.60 if mat == "lash" else 0.2, pivot=1.0 * ry) if mat in upper else {}
                 base = m.add(mat, plate(rows, off), m.skin_fixed(bone))
                 blink = plate(remap_ab(rows, closer(-0.20, **shut)), off)[0]
                 m.add_morph_part("まばたき", base, blink)
