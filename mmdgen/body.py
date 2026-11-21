@@ -92,6 +92,14 @@ ARM = [  # 腕からの距離, 半径
     (0.278, 0.0092),
 ]
 
+# 肩：腕の面を付け根より内へどこまで伸ばすか、肩の丸み（腕の向きへのずれ・内へのずれ・上へのずれ・半径 3 つ）、
+# 溶け合わせる幅（腕と丸み、それと胴）
+SH_ROOT = -0.050
+SH_CAP = -0.018   # 腕の筒が丸く終わる所（付け根からの距離）
+SH_SINK = 0.004   # 腕の面を胴の中へ沈める深さ
+SH_DELT = (0.006, 0.003, 0.0035, (0.0250, 0.0205, 0.0205))
+SH_K = (0.010, 0.014)
+
 # 腕の太さも折れ目が出ないよう滑らかに補間する
 _ARM_DENSE = catmull(np.array(ARM, float), 60)
 _ARM_T, _ARM_R = _ARM_DENSE[np.argsort(_ARM_DENSE[:, 0]), 0], _ARM_DENSE[np.argsort(_ARM_DENSE[:, 0]), 1]
@@ -979,20 +987,136 @@ class Character:
             d = arm_dir(s)
             u = np.array([0, 0, 1.0])
             v = np.array([s * np.sin(ARM_ANGLE), np.cos(ARM_ANGLE), 0])
-            ts = _samples([a[0] for a in ARM], [b[0] for b in arm_bands], 60, descending=False)
+            # 肩は、腕の筒・肩の丸み（三角筋）・胴を「なめらかに溶け合わせた 1 つの形」にして、腕の面をその表面まで広げる。
+            # 筒と玉を胴に刺すだけだと、玉の輪郭と刺さった線が見えて球体関節の人形のようになる。
+            # 既製のモデルは首から肩先・腕の上の線までが 1 枚の面で、わきの下も胴へ丸くつながる
+            ts = _samples([a[0] for a in ARM], [b[0] for b in arm_bands] + list(np.linspace(SH_ROOT, 0.075, 56)), 60, descending=False)
+            ts = np.concatenate([np.linspace(SH_ROOT, ts[0], 12, endpoint=False), ts])
             rings, centers = [], []
             for t in ts:
-                r = np.interp(t, _ARM_T, _ARM_R)
+                r = float(np.interp(max(t, 0.0), _ARM_T, _ARM_R))
                 c = j["腕"] + d * t
-                rings.append(ring(c, u, v, r, r, 48))
+                pts = ring(c, u, v, r, r, 48)
+                if t < 0.085:
+                    pts = self._shoulder_blend(pts, c, r, s)
+                rings.append(pts)
                 centers.append(c)
-            self._banded(rings, centers, ts, arm_bands, self.skin_arm(jp), cap0=True, cap1=True, descending=False)
-            sh_mat = _band_at(arm_bands, 0.0, descending=False)
-            # 肩の丸み（三角筋）：腕の向きに長い楕円体にして、玉ではなく腕へ流れる形にする
-            m.add(sh_mat, ellipsoid(j["腕"] + d * 0.004 + np.array([-s * 0.003, 0.0035, 0]), [0.025, 0.0205, 0.0205],
-                                    rot_axes(d, v, np.cross(d, v)), nu=48, nv=28),
-                  m.skin_auto(["上半身2", jp + "肩", jp + "腕"], {"上半身2": 1.2}))
+            v0 = len(m.positions)
+            self._banded(rings, centers, ts, arm_bands, self.skin_shoulder(jp, s), cap0=True, cap1=True, descending=False)
+            # 肩のまわりの法線は、溶け合わせた形の向きにする。面の向きから取ると、胴へ沈める壁の向きが混ざって
+            # 境目に影の線が出る。形の向きなら、境目で胴の法線とそろう
+            P = np.asarray(m.positions[v0:], float)
+            near = np.nonzero((P - j["腕"]) @ d < 0.085)[0]
+            if len(near):
+                gn = self._grad(self._shoulder_field(s)[1], P[near])
+                for i, n in zip(near, gn):
+                    m.normals[v0 + i] = n
             self.add_hand(jp, s, hand_mat)
+
+    def _torso_dist(self, p):
+        """点 p から胴の表面までのおよその距離（外が正）。胸や鎖骨のふくらみ込みの表面で測る。"""
+        y = np.clip(p[:, 1], TORSO[-1][0], TORSO[0][0])
+        rx, rz, cz = torso_profile(y)
+        ang = np.arctan2((p[:, 2] - cz) / rz, p[:, 0] / rx)
+
+        def radius(yy):
+            q = self.torso_ring_point(yy, ang)
+            return np.hypot(q[:, 0], q[:, 2] - torso_profile(yy)[2])
+        R = radius(y)
+        slope = (radius(np.clip(y + 0.002, TORSO[-1][0], TORSO[0][0])) - radius(np.clip(y - 0.002, TORSO[-1][0], TORSO[0][0]))) / 0.004
+        g = np.hypot(p[:, 0], p[:, 2] - cz) - R
+        # 胴の上端より上は、上端の輪からの距離にする
+        over = np.maximum(p[:, 1] - TORSO[0][0], 0.0)
+        return np.where(over > 0, np.hypot(np.maximum(g, 0.0), over), g / np.sqrt(1 + slope ** 2))
+
+    def _shoulder_field(self, s):
+        """肩の形：腕の筒と肩の丸み（limb）、それに胴を溶け合わせた形（field）。どちらも表面で 0、外が正の距離。"""
+        j, d = joints(s), arm_dir(s)
+        vv = np.array([s * np.sin(ARM_ANGLE), np.cos(ARM_ANGLE), 0])
+        cd = j["腕"] + d * SH_DELT[0] + np.array([-s * SH_DELT[1], SH_DELT[2], 0.0])
+        axes = np.stack([d, vv, np.cross(d, vv)], 1)  # 肩の丸みの軸（腕の向き・上・前後）
+        rad = np.array(SH_DELT[3])
+
+        def smin(a, b, k):
+            h = np.clip(0.5 + 0.5 * (b - a) / k, 0.0, 1.0)
+            return b * (1 - h) + a * h - k * h * (1 - h)
+
+        def limb(p):
+            # 腕の筒は付け根の少し内で丸く終わらせる（内へ伸ばし続けると、首の横で肩の上に突き出る）
+            t = np.maximum((p - j["腕"]) @ d, SH_CAP)
+            ra = np.interp(np.maximum(t, 0.0), _ARM_T, _ARM_R)
+            da = np.linalg.norm(p - j["腕"] - np.outer(t, d), axis=1) - ra
+            q = (p - cd) @ axes / rad
+            dd = (np.linalg.norm(q, axis=1) - 1.0) * rad.min()
+            return smin(da, dd, SH_K[0])
+
+        def field(p):
+            return smin(limb(p), self._torso_dist(p), SH_K[1])
+        return limb, field
+
+    @staticmethod
+    def _grad(fn, p, e=0.0008):
+        g = np.stack([(fn(p + np.eye(3)[k] * e) - fn(p - np.eye(3)[k] * e)) / (2 * e) for k in range(3)], 1)
+        return norm(g)
+
+    def _shoulder_blend(self, pts, c, r, s):
+        """腕の輪 pts（中心 c、半径 r）の各点を、腕・肩の丸み・胴を溶け合わせた形の表面まで外へ動かす。
+        腕から離れてその表面が胴の表面そのものになる所では、腕の面を胴の表面のすぐ下へゆるやかにもぐらせる
+        （急な壁にして沈めると、境目がのこぎり状になり、奥の暗い影が境目までにじむ）。"""
+        limb, field = self._shoulder_field(s)
+        dirs = (pts - c) / r
+        rho = np.linspace(r * 0.5, r + 0.040, 64)
+        flat = (c + dirs[:, None, :] * rho[None, :, None]).reshape(-1, 3)
+        la = limb(flat).reshape(len(pts), len(rho))
+        f = field(flat).reshape(len(pts), len(rho))
+        # 形の外に出てしまう点の逃がし先：元の筒の上の点を、胴の表面より少し内へ押し込んだ所
+        hid = pts.copy()
+        dt = self._torso_dist(hid)
+        shallow = dt > -SH_SINK
+        if shallow.any():
+            hid[shallow] -= self._grad(self._torso_dist, hid[shallow]) * (dt[shallow] + SH_SINK)[:, None]
+        out = hid.copy()
+        hit, lcs = [], []
+        for i in range(len(pts)):
+            pos = np.nonzero(f[i] > 0)[0]
+            if len(pos) == 0:
+                out[i] = pts[i]  # ずっと形の中（胴の奥）
+                continue
+            if pos[0] == 0:
+                continue
+            k1 = pos[0]
+            a0, a1 = f[i, k1 - 1], f[i, k1]
+            tt = a0 / (a0 - a1)
+            out[i] = c + dirs[i] * (rho[k1 - 1] + (rho[k1] - rho[k1 - 1]) * tt)
+            hit.append(i)
+            lcs.append(la[i, k1 - 1] + (la[i, k1] - la[i, k1 - 1]) * tt)
+        if hit:
+            hit, lcs = np.array(hit), np.array(lcs)
+            k = SH_K[1]
+            sink = 0.0004 * smoothstep(0.70 * k, 1.0 * k, lcs) + 0.6 * np.maximum(lcs - k, 0.0)
+            out[hit] -= self._grad(field, out[hit]) * sink[:, None]
+        return out
+
+    def skin_shoulder(self, jp, s):
+        """腕のウェイト。肩のすそ（腕から離れて胴の上に広がる所）は胴の骨に付ける。
+        付け根に近いというだけで腕の骨に付けると、腕を下ろしたときにすそまで回って胴から浮いたり沈んだりする。"""
+        base = self.skin_arm(jp)
+        limb, _ = self._shoulder_field(s)
+        j, d = joints(s), arm_dir(s)
+
+        def f(p):
+            out = base(p)
+            # 付け根のまわりは、腕に付く割合を 1 つの式で決める：腕の向きに沿って付け根の内から外へ 0 → 1、
+            # さらに腕の表面から離れるほど（すそへ行くほど）0 へ。骨までの距離で振り分けると、となりの頂点で
+            # 相手の骨が入れ替わって割合が飛び、腕を下ろしたときに面が裂ける
+            along = (p - j["腕"]) @ d
+            near = np.nonzero(along < 0.030)[0]
+            if len(near):
+                a = smoothstep(-0.022, 0.014, along[near]) * (1 - smoothstep(0.10 * SH_K[1], 0.85 * SH_K[1], limb(p[near])))
+                for i, ai in zip(near, a):
+                    out[i] = (jp + "腕", "上半身2", float(ai))
+            return out
+        return f
 
     def add_hand(self, jp, s, mat):
         """立体的な 5 本指の手：手首から段差なくつながる掌（母指球のふくらみ、甲の指の付け根の小さな山）と、
