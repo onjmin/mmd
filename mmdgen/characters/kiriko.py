@@ -129,7 +129,7 @@ def build(out_dir):
                   eye=dict(rx=0.016, ry=0.0125, top=0.88, iris=0.70, iris_h=1.05, iris_y=-0.06, iris_in=0.05))
     m.material("suit", "インナー", SUIT, toon=0)
     m.material("coat", "コート", COAT, double=True, toon=1)
-    m.material("fur", "ファー", FUR, toon=1)
+    m.material("fur", "ファー", FUR, toon=1, shadow_color=(0.90, 0.80, 0.66))  # 影も明るい生成り（既定の影色だと髪の下の襟がコートと同じ茶色に沈む）
     m.material("glove", "手袋", GLOVE, toon=0)
     m.material("skirt", "スカート", COAT, double=True, toon=1)
     m.material("sole", "靴底", (0.26, 0.17, 0.11), toon=0)
@@ -188,7 +188,7 @@ def build(out_dir):
         return -0.05 * fold_at(a, 0.645) + 0.0016 * _noise(a, 1.3, 11)
 
     # コートの上端は肩の上の線（0.82〜0.83）を越えて首の付け根まで覆う（肩を水平に張らせたので、0.818 で止めると肩のインナーがのぞく）
-    ys = np.concatenate([np.linspace(0.834, 0.820, 8), np.linspace(0.818, 0.645, 46)])
+    ys = np.concatenate([np.linspace(0.829, 0.820, 6), np.linspace(0.818, 0.645, 46)])  # そこから首まではファーの襟が覆う
     rings, in_rings, ctrs = [], [], []
     for y in ys:
         r, ri, a = coat_ring(y)
@@ -198,7 +198,7 @@ def build(out_dir):
             ri[:, 1] += hl
         # 肩の上はほぼ水平なので、横へずらすだけでは肩の面から浮かない。上へも持ち上げる
         lift = smoothstep(0.808, 0.824, y)
-        r[:, 1] += 0.0075 * lift
+        r[:, 1] += 0.0055 * lift
         ri[:, 1] += 0.0030 * lift
         cz = parts.torso_r(y)[2]
         rings.append(r)
@@ -210,18 +210,17 @@ def build(out_dir):
     hem_ctr = np.array([0.0, ys[-1] + 0.05, ctrs[-1][2]])
     m.add("coat", loft([rings[-1], in_rings[-1]], closed=False, centers=[hem_ctr, hem_ctr]), torso)
 
-    # 襟は 1 つだけ：首の後ろから両鎖骨を通り、胸元の合わせ目で V 字に合わさる一体のふわふわシープファー襟
-    v_path_pts = []
-    up_side = np.array([0, 1.0, 0])
-    ts_col = np.linspace(-1.0, 1.0, 72)
-    for tc in ts_col:
-        yc = 0.838 - 0.088 * (np.abs(tc) ** 1.55)
-        g = float(front_gap(yc))
-        a_col = np.pi / 2 - tc * (np.pi - g * 0.88)
-        pt_c = c.torso_ring_point(yc, np.array([a_col]), offset=0.0115)[0]
-        v_path_pts.append(pt_c)
+    # 襟（公式の立ち絵）：首のまわりに立ち上がる厚いファーの襟。首の後ろから首の横を回り、コートの前の縁に沿って
+    # 胸の真ん中の合わせ目まで V 字に下りる。襟は首に沿わせる（胴の輪郭に沿わせると、肩先まで広がって
+    # 肩から下がる平たい折り返しに見える）。前は胸の面に乗せ、合わせ目へ向かって細くする
+    half = [np.array([0.000, 0.851, 0.041]), np.array([0.020, 0.850, 0.036]), np.array([0.033, 0.848, 0.021]),
+            np.array([0.0375, 0.845, 0.006]), np.array([0.0375, 0.839, -0.006])]  # 首の横から前へは丸く回す（角が立つとシャツの襟先に見える）
+    for x, yc, off in [(0.0345, 0.829, 0.012), (0.029, 0.812, 0.0135), (0.021, 0.788, 0.0135), (0.011, 0.764, 0.0125),
+                       (0.0035, 0.750, 0.011)]:
+        half.append(c.torso_point_xy(x, yc, sg=-1, offset=off))
+    v_path_pts = catmull(np.array([q * [-1, 1, 1] for q in half[:0:-1]] + half), 10)
     col_skin = m.skin_vertical("首", "上半身2", 0.835, 0.760)
-    m.add("fur", fur(v_path_pts, 0.013, rv=0.016, side=up_side, seed=1, n=22), col_skin)
+    m.add("fur", fur(v_path_pts, 0.0185, rv=0.0140, side=np.array([0, 1.0, 0]), seed=1, n=24), col_skin)
 
     # ---- スカート（一重のプリーツスカート＋腰にファー 1 段） ----
     sk = physics.skirt(c, 0.590, 0.476, 1.66)
