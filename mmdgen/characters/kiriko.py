@@ -135,7 +135,7 @@ def build(out_dir):
     m.material("sole", "靴底", (0.26, 0.17, 0.11), toon=0)
     m.material("stitch", "縫い目", (0.36, 0.25, 0.16), toon=0, edge=False)
     m.material("welt_gold", "靴の線", (0.88, 0.72, 0.26), toon=0, edge=False)
-    c.hair_material("hair", "髪", HAIR, flecks=[(0.98, 0.42, 0.50), (1.0, 0.90, 0.30), (0.30, 0.82, 0.86), (0.98, 0.62, 0.25)])
+    c.hair_material("hair", "髪", HAIR, flecks=[(1.0, 0.36, 0.56), (1.0, 0.92, 0.28), (0.26, 0.84, 0.92), (1.0, 0.60, 0.22)])
     c.hair_material("tip", "毛先", TIP)
     m.material("bow", "リボン", BOW, toon=0)
     m.material("bow_tip", "リボンの房", (0.86, 0.48, 0.52), toon=0)

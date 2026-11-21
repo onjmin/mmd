@@ -53,17 +53,22 @@ def eye_top_arc(k):
     o = eye_outline()
     # 上側の縁（目頭の下端をスキップし、上の丸みの立ち上がり付近 B>=0.16 から開始）
     top_start = int(np.argmax((o[:, 0] < -0.5) & (o[:, 1] >= 0.16)))
-    end = int(np.argmax((o[:, 0] > 0.5) & (o[:, 1] <= 0.18)))
+    end = int(np.argmax((o[:, 0] > 0.5) & (o[:, 1] <= -0.12)))  # 目尻の角を回って、外の縁を少し下りた所まで
     if end <= top_start:
         end = len(o) // 2
     arc = o[top_start:end + 1]
     return arc
 
 
-def _offset(arc, th, k):
-    """arc を外側（目の外）へ th だけずらした線。th は ry 単位、A は k=rx/ry 倍して実寸で法線を取る。"""
+def _offset(arc, th, k, smooth=0):
+    """arc を外側（目の外）へ th だけずらした線。th は ry 単位、A は k=rx/ry 倍して実寸で法線を取る。
+    smooth > 0 で向きを前後 smooth 点でならす（目尻の角でずらした線が折れてギザギザになるのを防ぐ）。"""
     P = arc * [k, 1.0]
     t = np.gradient(P, axis=0)
+    if smooth:
+        t /= np.linalg.norm(t, axis=1, keepdims=True)
+        ker = np.ones(2 * smooth + 1) / (2 * smooth + 1)
+        t = np.stack([np.convolve(np.pad(t[:, i], smooth, mode="edge"), ker, mode="valid") for i in (0, 1)], 1)
     t /= np.linalg.norm(t, axis=1, keepdims=True)
     nrm = np.stack([-t[:, 1], t[:, 0]], 1)
     return (P + nrm * np.asarray(th)[:, None]) / [k, 1.0]
@@ -135,7 +140,7 @@ class TextureSet:
             shade = (col @ [0.3, 0.59, 0.11] / max(float(base @ [0.3, 0.59, 0.11]), 1e-6))[:, None, None]
             for k in range(len(flecks) * 2):
                 fc = np.asarray(flecks[k % len(flecks)], float)
-                c0, sw, a = rng.uniform(0.04, 0.96), rng.uniform(0.005, 0.013), rng.uniform(0.55, 0.85)
+                c0, sw, a = rng.uniform(0.04, 0.96), rng.uniform(0.005, 0.012), rng.uniform(0.88, 1.0)
                 wgt = (a * np.exp(-((u - c0) / sw) ** 2))[None, :, None]
                 img = img * (1 - wgt) + fc[None, None, :] * np.clip(shade, 0.55, 1.1) * wgt
         return self.save(Image.fromarray((np.clip(img, 0, 1) * 255).astype(np.uint8), "RGB"), name)
@@ -262,13 +267,13 @@ class TextureSet:
         sc = float(s[ic])  # 目尻の上角
         base_th = np.interp(
             s,
-            [0.00, 0.08, 0.22, 0.45, sc - 0.05, sc, sc + (1 - sc) * 0.45, 1.00],
-            [0.00, 0.09, 0.19, 0.27, 0.31, 0.33, 0.13, 0.00],
+            [0.00, 0.08, 0.22, 0.45, sc - 0.08, sc, sc + (1 - sc) * 0.50, 1.00],
+            [0.00, 0.09, 0.20, 0.29, 0.33, 0.30, 0.11, 0.00],
         ) * _face.get("lash")
         # 内側の白目側への被せ量は目頭・目尻で 0 に絞り、アーチ中央〜外側だけで自然に瞳上部を覆う
         in_env = np.sin(np.clip(s, 0.0, 1.0) * np.pi) ** 0.75
-        inner = _offset(arc, -0.14 * in_env * np.clip(base_th / 0.14, 0, 1.2), k)
-        outer = _offset(arc, base_th, k)
+        inner = _offset(arc, -0.14 * in_env * np.clip(base_th / 0.14, 0, 1.2), k, smooth=10)
+        outer = _offset(arc, base_th, k, smooth=10)
         band = [tuple(p) for p in outer] + [tuple(p) for p in inner[::-1]]
         if part == "upper":
             d.polygon(to_px(band), fill=_rgb(color))
@@ -276,22 +281,23 @@ class TextureSet:
             # 既製モデル（ミク系）の目尻：太い帯の端が外のやや上へ三角に跳ね、その下に短い毛がもう 1 本出る。
             # 細い毛先を下へ流すと、目尻が垂れて弱い目に見える
             tang_ang = 0.20 + np.clip(tilt, -0.3, 0.3) * 0.7
-            for ds, ln, ang_off, w_tip in ((-0.04, 0.42, 0.0, 0.165),):
+            # 帯の中に根もとを埋めた細い三角 1 本だけにする（太い三角だと帯の端と重なって角がいくつも出る）
+            for ds, ln, ang_off, w_tip in ((-0.05, 0.30, 0.0, 0.14),):
                 i0 = int(np.argmin(np.abs(s - np.clip(sc + ds, 0.05, 0.95))))
                 root = outer[i0] * [k, 1.0]
                 ang = tang_ang + ang_off
                 dirv = np.array([np.cos(ang), np.sin(ang)])
                 tip = root + dirv * ln
                 side = np.array([-dirv[1], dirv[0]]) * w_tip
-                back = root - dirv * 0.34
+                back = root - dirv * 0.30 - np.array([0.0, 0.10])
                 tri = [(back + side) / [k, 1.0], (back - side) / [k, 1.0], tip / [k, 1.0]]
                 d.polygon(to_px([tuple(p) for p in tri]), fill=_rgb(color))
             return self.save(img.resize((n // S, n // S), Image.LANCZOS), name)
 
         if part == "crease":
             # 二重の線：まつ毛の上を優しくなぞる繊細なライン
-            sel = (s > 0.16) & (s < sc + 0.02)
-            crease = _offset(arc, base_th + 0.19, k)[sel]
+            sel = (s > 0.16) & (s < sc - 0.05)  # 目尻の角の手前で止める（角を回ると先がかぎ形に折れる）
+            crease = _offset(arc, base_th + 0.19, k, smooth=10)[sel]
             w = np.sin(np.linspace(0, np.pi, len(crease))) ** 0.65
             for a, b, ww in zip(crease[:-1], crease[1:], w[:-1]):
                 d.line(to_px([tuple(a), tuple(b)]), fill=_rgb((0.40, 0.24, 0.22), int(165 * (0.4 + 0.6 * ww))),
@@ -358,27 +364,29 @@ class TextureSet:
         return self.save(Image.fromarray((arr * 255).astype(np.uint8), "RGBA"), name)
 
     def mouth_line(self, name="mouth_line.png", color=(0.48, 0.22, 0.22)):
-        """閉じ気味の笑顔の口：口角の上がった三日月形。上唇の線が太く濃く、中が少しだけ開いて赤い口内が見え、下は細い線。"""
+        """閉じた微笑みの口：口角の上がった細い線 1 本。真ん中がいちばん太く、口角へ細く消える。
+        既製の萌えキャラの口は小さな線で、中を赤く塗った三日月にすると口紅を引いた大人の口に見える。
+        線のすぐ下に、ごく淡い桃色の下唇のつやだけ置く。"""
         w, h = 256 * S, 128 * S
         img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
         d = ImageDraw.Draw(img)
         c = np.asarray(color, float)
-        top, bot, up_o, up_i = [], [], [], []
-        for t in np.linspace(0, 1, 80):
-            u = 0.04 + 0.92 * t
+        up_o, up_i, lip_t, lip_b = [], [], [], []
+        for t in np.linspace(0, 1, 96):
+            u = 0.06 + 0.88 * t
             x = (t - 0.5) * 2.0
-            y = 0.50 - 0.17 * x ** 2  # 口角が上がる
-            env = np.sin(np.pi * t) ** 0.5
-            gap = 0.20 * (1 - x * x) ** 1.2
-            top.append((u * w, y * h))
-            bot.append((u * w, (y + gap) * h))
-            up_o.append((u * w, (y - 0.050 * env) * h))
-            up_i.append((u * w, (y + 0.030 * env) * h))
-        d.polygon(top + bot[::-1], fill=_rgb(_mix(c, (0.80, 0.30, 0.32), 0.55), 235))   # 口の中
-        d.polygon(up_o + up_i[::-1], fill=_rgb(c * 0.75, 245))                          # 上唇の線
-        lo = [(px, py) for px, py in bot]
-        for (x0, y0), (x1, y1), t in zip(lo[:-1], lo[1:], np.linspace(0, 1, len(lo) - 1)):
-            d.line([(x0, y0), (x1, y1)], fill=_rgb(c, int(170 * np.sin(np.pi * t) ** 0.6)), width=max(1, int(h * 0.018)))
+            y = 0.52 - 0.20 * x ** 2 - 0.05 * x ** 4  # 口角が上がる（端ほど強く）
+            env = np.sin(np.pi * t) ** 0.7
+            th = 0.012 + 0.030 * env
+            up_o.append((u * w, (y - th) * h))
+            up_i.append((u * w, (y + th) * h))
+            g = np.clip(1 - (x / 0.55) ** 2, 0, 1)
+            lip_t.append((u * w, (y + th) * h))
+            lip_b.append((u * w, (y + th + 0.11 * g) * h))
+        d.polygon(lip_t + lip_b[::-1], fill=_rgb(_mix(c, (1.0, 0.62, 0.62), 0.80), 70))  # 下唇の淡い桃色
+        img = img.filter(ImageFilter.GaussianBlur(h * 0.02))
+        d = ImageDraw.Draw(img)
+        d.polygon(up_o + up_i[::-1], fill=_rgb(c * 0.85, 245))                           # 口の線
         return self.save(img.resize((256, 128), Image.LANCZOS), name)
 
     def mouth_interior(self, name="mouth_in.png", fang=False, part="back"):
